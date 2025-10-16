@@ -1,0 +1,14 @@
+{
+  "name": "tetris",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "mjdawson",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@neutralinojs/lib": "^6.3.0"
+  }
+}
