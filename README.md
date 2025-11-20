@@ -6,28 +6,32 @@ This is a simple Tetris game built with Neutralino.js.
 
 1. Open a terminal and change into the `tetris` folder.
 
-2. Download the official Neutralino v6.3.0 release for your platform from:
+2. Download the official Neutralino v6.3.0 release archive from:
 
    https://github.com/neutralinojs/neutralinojs/releases/tag/v6.3.0
 
-   Pick the archive that matches your OS/architecture, extract it, and copy the appropriate `neutralino` binary into the `tetris` folder (the app expects the launcher next to the project files).
-
-   Example (macOS, Apple Silicon):
+   Download the file named `neutralinojs-v6.3.0.zip` and extract it:
    ```sh
-   # download and extract (adjust URL/file as needed)
-   curl -L -o neutralino.tar.gz "https://github.com/neutralinojs/neutralinojs/releases/download/v6.3.0/neutralino-mac_arm64.zip"
-   unzip neutralino.tar.gz
-   mv neutralino-mac_arm64 ./
+   curl -L -o neutralinojs-v6.3.0.zip "https://github.com/neutralinojs/neutralinojs/releases/download/v6.3.0/neutralinojs-v6.3.0.zip"
+   unzip neutralinojs-v6.3.0.zip
    ```
 
-3. Make the binary executable and run it from the `tetris` folder:
+3. Inside the extracted folder, find the binary for your platform (for example, `neutralino-mac_arm64` for Apple Silicon Macs, or `neutralino-linux_x64` for 64-bit Linux, etc.). Copy the correct binary into the `tetris` folder:
+
+   ```sh
+   cp neutralinojs-v6.3.0/neutralino-mac_arm64 ./
+   # or for your platform, e.g.:
+   # cp neutralinojs-v6.3.0/neutralino-linux_x64 ./
+   ```
+
+4. Make the binary executable and run it from the `tetris` folder:
 
    ```sh
    chmod +x neutralino-*
-   ./neutralino-mac_arm64   # replace with the correct filename for your platform
+   ./neutralino-mac_arm64   # or the correct filename for your platform
    ```
 
-The game window should open automatically. If anything goes wrong, double-check you downloaded the matching binary for your OS and that it sits next to the project files (not buried inside `bin`).
+The game window should open automatically. If anything goes wrong, double-check you copied the right binary for your OS and that it sits next to the project files (not inside a subfolder).
 
 ---
 
