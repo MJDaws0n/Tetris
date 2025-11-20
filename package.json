@@ -3,12 +3,18 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "cd tetris && neu update && neu build",
+    "build:update": "cd tetris && neu update",
+    "build:exe": "cd tetris && neu build"
   },
   "author": "mjdawson",
   "license": "ISC",
-  "description": "",
+  "description": "Tetris game built with NeutralinoJS - can be built into standalone executables for Windows, Linux, and macOS",
   "dependencies": {
     "@neutralinojs/lib": "^6.3.0"
+  },
+  "devDependencies": {
+    "@neutralinojs/neu": "^11.6.0"
   }
 }
