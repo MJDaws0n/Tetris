@@ -117,6 +117,11 @@ canvas{
     color: #e5e7eb;
 }
 
+.current-timer strong {
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.02em;
+}
+
 .next-piece-preview {
     margin-top: 6px;
     padding: 10px 6px 4px 6px;

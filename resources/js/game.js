@@ -25,6 +25,8 @@ class Game {
         this.gameOver = false;
         this.dropInterval = 1000; // Initial drop interval in ms
         this.lastDropTime = 0;
+        this.startTime = null;
+        this.elapsedTime = 0;
         this.playerName = null;
         this.leaderboardKey = 'tetris_leaderboard_v1';
 
@@ -81,6 +83,8 @@ class Game {
         this.gameOver = false;
         this.dropInterval = 1000;
         this.lastDropTime = 0;
+        this.startTime = performance.now();
+        this.elapsedTime = 0;
         this.updateSidebar();
     }
 
@@ -92,6 +96,10 @@ class Game {
 
         if (!this.lastDropTime) {
             this.lastDropTime = time;
+        }
+
+        if (this.startTime != null) {
+            this.elapsedTime = Math.max(0, time - this.startTime);
         }
 
         const deltaTime = time - this.lastDropTime;
@@ -270,10 +278,12 @@ class Game {
         const scoreEl = document.getElementById('statScore');
         const levelEl = document.getElementById('statLevel');
         const linesEl = document.getElementById('statLines');
+        const timeEl = document.getElementById('statTime');
         if (playerEl) playerEl.textContent = this.playerName || '—';
         if (scoreEl) scoreEl.textContent = this.score;
         if (levelEl) levelEl.textContent = this.level;
         if (linesEl) linesEl.textContent = this.linesCleared;
+        if (timeEl) timeEl.textContent = this._formatTime(this.elapsedTime);
 
         // Render next piece preview
         const preview = document.getElementById('nextPiecePreview');
@@ -300,6 +310,15 @@ class Game {
                 preview.appendChild(grid);
             }
         }
+    }
+
+    _formatTime(ms) {
+        const totalSeconds = Math.floor(ms / 1000);
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = totalSeconds % 60;
+        const mm = minutes.toString().padStart(2, '0');
+        const ss = seconds.toString().padStart(2, '0');
+        return `${mm}:${ss}`;
     }
 
     drawGameOver() {
