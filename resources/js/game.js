@@ -12,6 +12,8 @@ class Game {
         this.cellSize = 30;
         // UI area to the right of the playfield (pixels)
         this.uiWidth = 150;
+        // extra space at the top so the playfield isn't cut off
+        this.topOffset = 10;
         // make canvas match the logical board size and scale for HiDPI screens
         this._fitCanvas();
         this.board = this.createBoard();
@@ -24,22 +26,19 @@ class Game {
         this.dropInterval = 1000; // Initial drop interval in ms
         this.lastDropTime = 0;
 
-        // use a bound method so it can be removed later if needed
         this._onKey = this.handleKey.bind(this);
         document.addEventListener('keydown', this._onKey);
     }
 
-    // size the canvas element so drawing coordinates correspond to CSS pixels
     _fitCanvas() {
         const totalWidth = this.boardWidth * this.cellSize + this.uiWidth;
-        const totalHeight = this.boardHeight * this.cellSize;
+        const totalHeight = this.boardHeight * this.cellSize + (this.topOffset || 0);
         const dpr = window.devicePixelRatio || 1;
         this.canvas.width = Math.floor(totalWidth * dpr);
         this.canvas.height = Math.floor(totalHeight * dpr);
         this.canvas.style.width = totalWidth + 'px';
         this.canvas.style.height = totalHeight + 'px';
         this.canvas.style.display = 'block';
-        // reset transform before scaling in case _fitCanvas runs twice
         this.context.setTransform(1, 0, 0, 1, 0, 0);
         this.context.scale(dpr, dpr);
     }
@@ -124,7 +123,7 @@ class Game {
         const originalRotation = this.currentPiece.rotation;
         this.currentPiece.rotate();
         if (!this.validMove(this.currentPiece, 0, 0)) {
-            this.currentPiece.rotation = originalRotation; // Revert rotation if invalid
+            this.currentPiece.rotation = originalRotation;
         }
     }
 
@@ -167,7 +166,7 @@ class Game {
                 this.board.splice(y, 1);
                 this.board.unshift(Array(this.boardWidth).fill(0));
                 linesCleared++;
-                y++; // Recheck the same line after shifting
+                y++;
             }
         }
         if (linesCleared > 0) {
@@ -175,13 +174,19 @@ class Game {
             this.score += linesCleared * 100;
             if (this.linesCleared >= this.level * 10) {
                 this.level++;
-                this.dropInterval *= 0.9; // Increase speed
+                this.dropInterval *= 0.9;
             }
         }
     }
 
     handleKey(event) {
-        if (this.gameOver) return;
+        if (this.gameOver) {
+            if (event.key === ' ') {
+                this.reset();
+                requestAnimationFrame((time) => this.update(time));
+            }
+            return;
+        }
         switch (event.key) {
             case 'ArrowLeft':
                 this.moveLeft();
@@ -205,16 +210,17 @@ class Game {
     }
 
     draw() {
-    // clear using CSS pixel size
-    this.context.clearRect(0, 0, this.boardWidth * this.cellSize + this.uiWidth, this.boardHeight * this.cellSize);
+        this.context.clearRect(0, 0, this.boardWidth * this.cellSize + this.uiWidth, this.boardHeight * this.cellSize + (this.topOffset || 0));
+        this.context.save();
+        this.context.translate(0, this.topOffset || 0);
         this.drawBoard();
         if (this.currentPiece) this.drawPiece(this.currentPiece);
         if (this.nextPiece) this.drawNextPiece();
         this.drawScore();
+        this.context.restore();
     }
 
     drawBoard() {
-        // draw grid background
         this.context.strokeStyle = '#ccc';
         for (let y = 0; y < this.boardHeight; y++) {
             for (let x = 0; x < this.boardWidth; x++) {
@@ -245,7 +251,6 @@ class Game {
     const offsetX = this.boardWidth * this.cellSize + 20;
         const offsetY = 20;
         this.context.fillStyle = '#000';
-        // ensure readable font (CSS pixels)
         this.context.font = `${Math.max(12, Math.floor(this.cellSize * 0.6))}px Arial`;
         this.context.fillText('Next:', offsetX, offsetY - 10);
         for (let y = 0; y < this.nextPiece.matrix.length; y++) {
@@ -273,15 +278,18 @@ class Game {
 
     drawGameOver() {
         this.context.fillStyle = 'rgba(0, 0, 0, 0.75)';
-    // use CSS pixel size for overlay rectangle
-    this.context.fillRect(0, 0, this.boardWidth * this.cellSize + this.uiWidth, this.boardHeight * this.cellSize);
+        const fullWidth = this.boardWidth * this.cellSize + this.uiWidth;
+        const fullHeight = this.boardHeight * this.cellSize + (this.topOffset || 0);
+        this.context.fillRect(0, 0, fullWidth, fullHeight);
         this.context.fillStyle = '#fff';
         this.context.font = '48px Arial';
         const text = 'Game Over';
-        // center in CSS pixels
-    const centerX = (this.boardWidth * this.cellSize + this.uiWidth) / 2;
-        const centerY = (this.boardHeight * this.cellSize) / 2;
-        this.context.fillText(text, centerX - (this.context.measureText(text).width / 2), centerY);
+        const centerX = fullWidth / 2;
+        const centerY = fullHeight / 2;
+        this.context.fillText(text, centerX - (this.context.measureText(text).width / 2), centerY - 12);
+        this.context.font = `${Math.max(12, Math.floor(this.cellSize * 0.6))}px Arial`;
+        const hint = 'Press Space to Restart';
+        this.context.fillText(hint, centerX - (this.context.measureText(hint).width / 2), centerY + 28);
     }
 
     getColor(type) {
@@ -303,7 +311,7 @@ class Piece {
         this.type = type;
         this._rotation = 0;
         this.defineMatrices();
-        this.rotation = 0; // this will set this.matrix
+        this.rotation = 0;
         this.x = 0;
         this.y = 0;
     }
