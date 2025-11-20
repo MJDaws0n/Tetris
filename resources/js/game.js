@@ -7,13 +7,13 @@ class Game {
     constructor(canvasId) {
         this.canvas = document.getElementById(canvasId);
         this.context = this.canvas.getContext('2d');
+        // Slightly taller board and tuned cell size for nicer proportions on the dark layout
         this.boardWidth = 10;
-        this.boardHeight = 20;
-        this.cellSize = 30;
-        // UI area to the right of the playfield (pixels)
-        this.uiWidth = 150;
-        // extra space at the top so the playfield isn't cut off
-        this.topOffset = 10;
+        this.boardHeight = 22;
+        this.cellSize = 28;
+        // UI area is handled in the sidebar; canvas only renders the playfield
+        // extra space at the top so pieces aren't cut off
+        this.topOffset = 14;
         // make canvas match the logical board size and scale for HiDPI screens
         this._fitCanvas();
         this.board = this.createBoard();
@@ -25,13 +25,18 @@ class Game {
         this.gameOver = false;
         this.dropInterval = 1000; // Initial drop interval in ms
         this.lastDropTime = 0;
+        this.playerName = null;
+        this.leaderboardKey = 'tetris_leaderboard_v1';
+
+        // bind UI elements (modal, leaderboard)
+        this._bindUI();
 
         this._onKey = this.handleKey.bind(this);
         document.addEventListener('keydown', this._onKey);
     }
 
     _fitCanvas() {
-        const totalWidth = this.boardWidth * this.cellSize + this.uiWidth;
+        const totalWidth = this.boardWidth * this.cellSize;
         const totalHeight = this.boardHeight * this.cellSize + (this.topOffset || 0);
         const dpr = window.devicePixelRatio || 1;
         this.canvas.width = Math.floor(totalWidth * dpr);
@@ -54,8 +59,8 @@ class Game {
     }
 
     start() {
-        this.reset();
-        requestAnimationFrame((time) => this.update(time));
+        // prompt for player name before starting
+        this.showNameModal();
     }
 
     reset() {
@@ -103,6 +108,7 @@ class Game {
             this.currentPiece.setPosition(Math.floor(this.boardWidth / 2) - 1, 0);
             if (!this.validMove(this.currentPiece, 0, 0)) {
                 this.gameOver = true;
+                this.handleGameOver();
             }
         }
     }
@@ -182,8 +188,9 @@ class Game {
     handleKey(event) {
         if (this.gameOver) {
             if (event.key === ' ') {
-                this.reset();
-                requestAnimationFrame((time) => this.update(time));
+                // start a new game — prompt for name each time
+                this.playerName = null;
+                this.showNameModal();
             }
             return;
         }
@@ -210,13 +217,13 @@ class Game {
     }
 
     draw() {
-        this.context.clearRect(0, 0, this.boardWidth * this.cellSize + this.uiWidth, this.boardHeight * this.cellSize + (this.topOffset || 0));
+        this.context.clearRect(0, 0, this.boardWidth * this.cellSize, this.boardHeight * this.cellSize + (this.topOffset || 0));
         this.context.save();
         this.context.translate(0, this.topOffset || 0);
         this.drawBoard();
         if (this.currentPiece) this.drawPiece(this.currentPiece);
-        if (this.nextPiece) this.drawNextPiece();
-        this.drawScore();
+        // score and next piece are displayed in the sidebar (DOM)
+        this.updateSidebar();
         this.context.restore();
     }
 
@@ -247,38 +254,24 @@ class Game {
         }
     }
 
-    drawNextPiece() {
-    const offsetX = this.boardWidth * this.cellSize + 20;
-        const offsetY = 20;
-        this.context.fillStyle = '#000';
-        this.context.font = `${Math.max(12, Math.floor(this.cellSize * 0.6))}px Arial`;
-        this.context.fillText('Next:', offsetX, offsetY - 10);
-        for (let y = 0; y < this.nextPiece.matrix.length; y++) {
-            for (let x = 0; x < this.nextPiece.matrix[y].length; x++) {
-                if (this.nextPiece.matrix[y][x]) {
-                    const drawX = offsetX + x * this.cellSize;
-                    const drawY = offsetY + y * this.cellSize;
-                    this.context.fillStyle = this.getColor(this.nextPiece.type);
-                    this.context.fillRect(drawX, drawY, this.cellSize, this.cellSize);
-                    this.context.strokeRect(drawX, drawY, this.cellSize, this.cellSize);
-                }
-            }
-        }
-    }
+    updateSidebar() {
+        const table = document.getElementById('leaderboardTable');
+        if (!table) return;
 
-    drawScore() {
-    const offsetX = this.boardWidth * this.cellSize + 20;
-        const offsetY = 150;
-        this.context.fillStyle = '#000';
-        this.context.font = `${Math.max(12, Math.floor(this.cellSize * 0.6))}px Arial`;
-        this.context.fillText(`Score: ${this.score}`, offsetX, offsetY);
-        this.context.fillText(`Level: ${this.level}`, offsetX, offsetY + 22);
-        this.context.fillText(`Lines: ${this.linesCleared}`, offsetX, offsetY + 44);
+        // Update current run stats card
+        const playerEl = document.getElementById('statPlayer');
+        const scoreEl = document.getElementById('statScore');
+        const levelEl = document.getElementById('statLevel');
+        const linesEl = document.getElementById('statLines');
+        if (playerEl) playerEl.textContent = this.playerName || '—';
+        if (scoreEl) scoreEl.textContent = this.score;
+        if (levelEl) levelEl.textContent = this.level;
+        if (linesEl) linesEl.textContent = this.linesCleared;
     }
 
     drawGameOver() {
         this.context.fillStyle = 'rgba(0, 0, 0, 0.75)';
-        const fullWidth = this.boardWidth * this.cellSize + this.uiWidth;
+        const fullWidth = this.boardWidth * this.cellSize;
         const fullHeight = this.boardHeight * this.cellSize + (this.topOffset || 0);
         this.context.fillRect(0, 0, fullWidth, fullHeight);
         this.context.fillStyle = '#fff';
@@ -290,6 +283,102 @@ class Game {
         this.context.font = `${Math.max(12, Math.floor(this.cellSize * 0.6))}px Arial`;
         const hint = 'Press Space to Restart';
         this.context.fillText(hint, centerX - (this.context.measureText(hint).width / 2), centerY + 28);
+    }
+
+    /* Leaderboard + UI helpers */
+    _bindUI() {
+        const modal = document.getElementById('nameModal');
+        const input = document.getElementById('playerNameInput');
+        const startBtn = document.getElementById('startBtn');
+        if (startBtn && input && modal) {
+            startBtn.addEventListener('click', () => {
+                const name = (input.value || 'Anonymous').trim();
+                this.playerName = name || 'Anonymous';
+                modal.classList.add('hidden');
+                this.reset();
+                this.renderLeaderboard();
+                requestAnimationFrame((time) => this.update(time));
+            });
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') startBtn.click();
+            });
+        }
+        // render existing leaderboard immediately
+        this.renderLeaderboard();
+    }
+
+    showNameModal() {
+        const modal = document.getElementById('nameModal');
+        const input = document.getElementById('playerNameInput');
+        if (!modal) { this.reset(); requestAnimationFrame((time) => this.update(time)); return; }
+        modal.classList.remove('hidden');
+        if (input) { input.value = ''; input.focus(); }
+    }
+
+    loadLeaderboard() {
+        try {
+            const raw = localStorage.getItem(this.leaderboardKey);
+            return raw ? JSON.parse(raw) : [];
+        } catch (e) { return []; }
+    }
+
+    saveLeaderboard(list) {
+        try { localStorage.setItem(this.leaderboardKey, JSON.stringify(list)); } catch (e) {}
+    }
+
+    addScore(name, score) {
+        const list = this.loadLeaderboard();
+        const normalized = (name || 'Anonymous').trim();
+        const key = normalized.toLowerCase();
+        let found = false;
+        for (let i = 0; i < list.length; i++) {
+            if ((list[i].name || '').toLowerCase() === key) {
+                found = true;
+                // replace only if new score is higher
+                if ((score || 0) > (list[i].score || 0)) {
+                    list[i].score = score || 0;
+                    list[i].date = Date.now();
+                    // update stored name casing to the most recent submission
+                    list[i].name = normalized;
+                }
+                break;
+            }
+        }
+        if (!found) {
+            list.push({ name: normalized, score: score || 0, date: Date.now() });
+        }
+        list.sort((a, b) => b.score - a.score);
+        // keep top 10
+        const top = list.slice(0, 10);
+        this.saveLeaderboard(top);
+        this.renderLeaderboard();
+    }
+
+    renderLeaderboard() {
+        const tbody = document.querySelector('#leaderboardTable tbody');
+        if (!tbody) return;
+        const list = this.loadLeaderboard();
+        tbody.innerHTML = '';
+        if (list.length === 0) {
+            const tr = document.createElement('tr');
+            const td = document.createElement('td'); td.colSpan = 3; td.style.textAlign = 'center'; td.textContent = 'No scores yet';
+            tr.appendChild(td);
+            tbody.appendChild(tr);
+            return;
+        }
+        list.forEach((entry, index) => {
+            const tr = document.createElement('tr');
+            const rankTd = document.createElement('td'); rankTd.textContent = index + 1;
+            const nameTd = document.createElement('td'); nameTd.textContent = entry.name;
+            const scoreTd = document.createElement('td'); scoreTd.textContent = entry.score;
+            tr.appendChild(rankTd); tr.appendChild(nameTd); tr.appendChild(scoreTd);
+            tbody.appendChild(tr);
+        });
+    }
+
+    handleGameOver() {
+        // save score under current player name
+        this.addScore(this.playerName || 'Anonymous', this.score);
     }
 
     getColor(type) {

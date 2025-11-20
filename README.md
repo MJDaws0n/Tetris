@@ -18,6 +18,8 @@ This is a simple Tetris game built with Neutralino.js.
 
 3. Inside the extracted folder, find the binary for your platform (for example, `neutralino-mac_arm64` for Apple Silicon Macs, or `neutralino-linux_x64` for 64-bit Linux, etc.). Copy the correct binary into the `tetris` folder:
 
+so it's good i just need it so that it insteasd asks for you're name when app starts, it ask every single new game, also a higher score with same name will override it, and it should not be case sensitive
+
    ```sh
    cp neutralinojs-v6.3.0/neutralino-mac_arm64 ./
    # or for your platform, e.g.:
