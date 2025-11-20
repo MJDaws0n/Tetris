@@ -6,22 +6,12 @@
     <link rel="stylesheet" href="/styles.css">
   </head>
   <body>
-    <div id="neutralinoapp">
-      <h1>NeutralinoJs</h1>
-      <div id="info"></div>
-      <br/>
-      <img src="/icons/logo.gif" alt="Neutralinojs" />
-      <div>
-        <a href="#" onclick="openDocs();">Docs</a> &middot;  
-        <a href="#" onclick="openTutorial();">Video tutorial</a>
-      </div>
-    </div>
-    <!-- Neutralino.js client. This file is gitignored, 
-        because `neu update` typically downloads it.
-        Avoid copy-pasting it. 
-        -->
+    <canvas id="gameCanvas">
+      Your browser does not support the HTML5 canvas tag.
+    </canvas>
     <script src="/js/neutralino.js"></script>
     <!-- Your app's source files -->
     <script src="/js/main.js"></script>
+    <script src="/js/game.js"></script>
   </body>
 </html>

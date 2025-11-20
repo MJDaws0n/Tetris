@@ -33,10 +33,10 @@
   "modes": {
     "window": {
       "title": "tetris",
-      "width": 800,
-      "height": 500,
-      "minWidth": 400,
-      "minHeight": 200,
+      "width": 900,
+      "height": 700,
+      "minWidth": 900,
+      "minHeight": 700,
       "center": true,
       "fullScreen": false,
       "alwaysOnTop": false,
