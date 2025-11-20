@@ -74,6 +74,7 @@ class Game {
         this.gameOver = false;
         this.dropInterval = 1000;
         this.lastDropTime = 0;
+        this.updateSidebar();
     }
 
     update(time) {
@@ -188,7 +189,6 @@ class Game {
     handleKey(event) {
         if (this.gameOver) {
             if (event.key === ' ') {
-                // start a new game — prompt for name each time
                 this.playerName = null;
                 this.showNameModal();
             }
@@ -267,6 +267,32 @@ class Game {
         if (scoreEl) scoreEl.textContent = this.score;
         if (levelEl) levelEl.textContent = this.level;
         if (linesEl) linesEl.textContent = this.linesCleared;
+
+        // Render next piece preview
+        const preview = document.getElementById('nextPiecePreview');
+        if (preview) {
+            preview.innerHTML = '';
+            if (this.nextPiece) {
+                const grid = document.createElement('div');
+                grid.className = 'next-piece-grid';
+                const color = this.getColor(this.nextPiece.type);
+                // normalize to max 4x4 grid
+                const matrix = this.nextPiece.matrix;
+                for (let y = 0; y < 4; y++) {
+                    for (let x = 0; x < 4; x++) {
+                        const cell = document.createElement('div');
+                        cell.className = 'next-piece-cell';
+                        const filled = matrix[y] && matrix[y][x];
+                        if (filled) {
+                            cell.style.background = color;
+                            cell.style.boxShadow = '0 0 8px ' + color + '55';
+                        }
+                        grid.appendChild(cell);
+                    }
+                }
+                preview.appendChild(grid);
+            }
+        }
     }
 
     drawGameOver() {
@@ -383,13 +409,13 @@ class Game {
 
     getColor(type) {
         const colors = {
-            'I': '#00f0f0',
-            'J': '#0000f0',
-            'L': '#f0a000',
-            'O': '#f0f000',
-            'S': '#00f000',
-            'T': '#a000f0',
-            'Z': '#f00000'
+            'I': '#22d3ee', // cyan
+            'J': '#3b82f6', // blue
+            'L': '#f97316', // orange
+            'O': '#eab308', // yellow
+            'S': '#22c55e', // green
+            'T': '#a855f7', // purple
+            'Z': '#ef4444'  // red
         };
         return colors[type] || '#000';
     }

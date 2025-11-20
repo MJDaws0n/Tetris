@@ -101,6 +101,28 @@ canvas{
     color: #e5e7eb;
 }
 
+.next-piece-preview {
+    margin-top: 6px;
+    padding: 10px 6px 4px 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.next-piece-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 14px);
+    grid-auto-rows: 14px;
+    gap: 2px;
+}
+
+.next-piece-cell {
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    background: #111827;
+}
+
 #leaderboardTable {
     width: 100%;
     border-collapse: collapse;
