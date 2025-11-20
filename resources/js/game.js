@@ -28,11 +28,18 @@ class Game {
         this.playerName = null;
         this.leaderboardKey = 'tetris_leaderboard_v1';
 
+        // shared online leaderboard via websocket
+        this.ws = null;
+        this.wsUrl = 'wss://tetris.mjdawson.net:441';
+
         // bind UI elements (modal, leaderboard)
         this._bindUI();
 
         this._onKey = this.handleKey.bind(this);
         document.addEventListener('keydown', this._onKey);
+
+        // connect to remote leaderboard
+        this._connectWebSocket();
     }
 
     _fitCanvas() {
@@ -378,6 +385,9 @@ class Game {
         const top = list.slice(0, 10);
         this.saveLeaderboard(top);
         this.renderLeaderboard();
+
+        // also send to remote leaderboard if connected
+        this._sendScoreToServer(normalized, score || 0);
     }
 
     renderLeaderboard() {
@@ -405,6 +415,84 @@ class Game {
     handleGameOver() {
         // save score under current player name
         this.addScore(this.playerName || 'Anonymous', this.score);
+    }
+
+    /* WebSocket leaderboard sync */
+    _connectWebSocket() {
+        try {
+            this.ws = new WebSocket(this.wsUrl);
+        } catch (e) {
+            this.ws = null;
+            return;
+        }
+
+        this.ws.addEventListener('open', () => {
+            // ask server for current scores on connect
+            try {
+                this.ws.send(JSON.stringify({ type: 'sync' }));
+            } catch (e) {}
+        });
+
+        this.ws.addEventListener('message', (event) => {
+            if (!event.data) return;
+            let payload;
+            try {
+                payload = JSON.parse(event.data);
+            } catch (e) {
+                return;
+            }
+
+            // expected shape: { names: [...], scores: [...] }
+            if (!payload || !Array.isArray(payload.names) || !Array.isArray(payload.scores)) return;
+
+            const combined = [];
+            const len = Math.min(payload.names.length, payload.scores.length);
+            for (let i = 0; i < len; i++) {
+                const name = (payload.names[i] || 'Anonymous').toString();
+                const score = Number(payload.scores[i]) || 0;
+                combined.push({ name, score, date: Date.now() });
+            }
+
+            // merge remote list into local leaderboard, keeping best scores per name (case-insensitive)
+            const local = this.loadLeaderboard();
+            const byKey = new Map();
+
+            const upsert = (entry) => {
+                const normName = (entry.name || 'Anonymous').trim();
+                const key = normName.toLowerCase();
+                const existing = byKey.get(key);
+                if (!existing || (entry.score || 0) > (existing.score || 0)) {
+                    byKey.set(key, { name: normName, score: entry.score || 0, date: entry.date || Date.now() });
+                }
+            };
+
+            local.forEach(upsert);
+            combined.forEach(upsert);
+
+            const merged = Array.from(byKey.values());
+            merged.sort((a, b) => b.score - a.score);
+            const top = merged.slice(0, 10);
+            this.saveLeaderboard(top);
+            this.renderLeaderboard();
+        });
+
+        this.ws.addEventListener('close', () => {
+            // try to reconnect after a delay
+            this.ws = null;
+            setTimeout(() => this._connectWebSocket(), 5000);
+        });
+
+        this.ws.addEventListener('error', () => {
+            try { this.ws.close(); } catch (e) {}
+        });
+    }
+
+    _sendScoreToServer(name, score) {
+        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+        const payload = { name: name || 'Anonymous', score: score || 0 };
+        try {
+            this.ws.send(JSON.stringify(payload));
+        } catch (e) {}
     }
 
     getColor(type) {
