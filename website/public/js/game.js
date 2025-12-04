@@ -257,15 +257,23 @@ class Game {
         }
         switch (event.key) {
             case 'ArrowLeft':
+            case 'a':
+            case 'A':
                 this.moveLeft();
                 break;
             case 'ArrowRight':
+            case 'd':
+            case 'D':
                 this.moveRight();
                 break;
             case 'ArrowDown':
+            case 's':
+            case 'S':
                 this.moveDown();
                 break;
             case 'ArrowUp':
+            case 'w':
+            case 'W':
                 this.rotate();
                 break;
             case 'c':
