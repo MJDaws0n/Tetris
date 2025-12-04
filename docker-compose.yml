@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  # Node.js Server Service
+  node-server:
+      build: ./node-app
+      container_name: node-server
+      ports:
+        - "${NODE_PORT}:3000" # Exposed to host
+      environment:
+        - DB_HOST=mysql
+        - DB_USER=root
+        - DB_PASSWORD=${MYSQL_ROOT_PASSWORD}
+        - DB_NAME=${MYSQL_DATABASE}
+      depends_on:
+        - mysql
+      networks:
+        - app-network
+
+  # Apache Server Service
+  apache-server:
+      build: ./website
+      container_name: apache-server
+      ports:
+        - "${APACHE_PORT}:80" # Exposed to host on port from env
+      networks:
+        - app-network
+
+  # MySQL Database Service (Internal Only)
+  mysql:
+      image: mysql:8.0
+      container_name: mysql-db
+      # No ports section means it's not exposed to the host, only to the network
+      environment:
+        - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+        - MYSQL_DATABASE=${MYSQL_DATABASE}
+      volumes:
+        - mysql-data:/var/lib/mysql
+      networks:
+        - app-network
+
+volumes:
+  mysql-data:
+
+networks:
+  app-network:
+    driver: bridge

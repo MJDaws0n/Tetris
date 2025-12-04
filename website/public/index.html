@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <title>Tetris</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <div id="app" class="app">
+      <header class="app-header">
+        <div class="app-title">Tetris by Max</div>
+        <div class="app-subtitle">Arrow keys to move • Space to drop</div>
+      </header>
+      <div class="app-main">
+        <div id="gameArea" class="game-area">
+          <canvas id="gameCanvas">Your browser does not support the HTML5 canvas tag.</canvas>
+          <div id="nameModal" class="modal hidden">
+            <div class="modal-card">
+              <h2>Welcome</h2>
+              <p class="modal-text">Enter a name for the leaderboard.</p>
+              <input id="playerNameInput" type="text" placeholder="Your name" maxlength="20" />
+              <div class="modal-actions">
+                <button id="startBtn">Start game</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <aside id="sidebar" class="sidebar">
+          <div class="sidebar-card sidebar-current">
+            <div class="sidebar-card-title">Current run</div>
+            <div class="current-stat"><span>Player</span><strong id="statPlayer">—</strong></div>
+            <div class="current-stat"><span>Score</span><strong id="statScore">0</strong></div>
+            <div class="current-stat"><span>Level</span><strong id="statLevel">1</strong></div>
+            <div class="current-stat"><span>Lines</span><strong id="statLines">0</strong></div>
+            <div class="current-stat current-timer"><span>Time</span><strong id="statTime">00:00</strong></div>
+          </div>
+          <div class="sidebar-card sidebar-next">
+            <div class="sidebar-card-title">Next piece</div>
+            <div id="nextPiecePreview" class="next-piece-preview"></div>
+          </div>
+          <div class="sidebar-card sidebar-hold">
+            <div class="sidebar-card-title">Hold (C)</div>
+            <div id="holdPiecePreview" class="next-piece-preview"></div>
+          </div>
+          <div class="sidebar-card sidebar-leaderboard">
+            <div class="sidebar-card-title">Leaderboard</div>
+            <table id="leaderboardTable">
+              <thead>
+                <tr><th>#</th><th>Name</th><th>Score</th></tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </aside>
+      </div>
+    </div>
+
+    <script src="/js/neutralino.js"></script>
+    <script src="/js/main.js"></script>
+    <script src="/js/game.js"></script>
+  </body>
+</html>

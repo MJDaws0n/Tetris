@@ -1,0 +1,230 @@
+body,html {
+    /* Dark, animated swirly-style layered gradients */
+    background:
+        radial-gradient(circle at 0% 0%, rgba(56,189,248,0.10), transparent 55%),
+        radial-gradient(circle at 100% 0%, rgba(129,140,248,0.12), transparent 55%),
+        radial-gradient(circle at 0% 100%, rgba(52,211,153,0.12), transparent 55%),
+        radial-gradient(circle at 100% 100%, rgba(248,250,252,0.04), transparent 55%),
+        radial-gradient(circle at 50% 50%, #020617 0, #020617 40%, #030712 70%, #020617 100%);
+    background-size: 140% 140%;
+    animation: swirlBackground 22s ease-in-out infinite alternate;
+    color: #e5e7eb;
+    padding:0;
+    margin:0;
+    height: 100vh;
+    width: 100vw;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+}
+
+@keyframes swirlBackground {
+    0% {
+        background-position: 0% 0%, 100% 0%, 0% 100%, 100% 100%, 50% 50%;
+    }
+    50% {
+        background-position: 10% 20%, 90% 5%, 5% 90%, 95% 95%, 52% 48%;
+    }
+    100% {
+        background-position: 20% 10%, 80% 15%, 15% 80%, 85% 90%, 48% 52%;
+    }
+}
+
+.app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    box-sizing: border-box;
+}
+
+.app-header {
+    padding: 14px 22px;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    background: radial-gradient(circle at top left, #0f172a, #020617 55%);
+    border-bottom: 1px solid #1f2937;
+}
+
+.app-title {
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-size: 18px;
+}
+
+.app-subtitle {
+    font-size: 13px;
+    color: #9ca3af;
+}
+
+.app-main {
+    flex: 1 1 auto;
+    display: flex;
+}
+
+.game-area {
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px 24px 24px 24px;
+}
+
+canvas{
+    display: block;
+}
+
+.sidebar {
+    width: 320px;
+    padding: 20px 22px 24px 10px;
+    box-sizing: border-box;
+    background: linear-gradient(to bottom, #020617, #020617 60%, #030712);
+}
+
+.sidebar-card {
+    background: radial-gradient(circle at top, #020617, #020617 40%, #030712 100%);
+    border-radius: 14px;
+    padding: 14px 14px 10px 14px;
+    border: 1px solid #111827;
+    box-shadow: 0 18px 40px rgba(15,23,42,0.9);
+}
+
+.sidebar-card + .sidebar-card {
+    margin-top: 14px;
+}
+
+.sidebar-card-title {
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: #9ca3af;
+    margin-bottom: 10px;
+}
+
+.current-stat {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 0;
+    font-size: 14px;
+}
+
+.current-stat span {
+    color: #6b7280;
+}
+
+.current-stat strong {
+    font-weight: 600;
+    color: #e5e7eb;
+}
+
+.current-timer strong {
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.02em;
+}
+
+.next-piece-preview {
+    margin-top: 6px;
+    padding: 10px 6px 4px 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.next-piece-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 14px);
+    grid-auto-rows: 14px;
+    gap: 2px;
+}
+
+.next-piece-cell {
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    background: #111827;
+}
+
+#leaderboardTable {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+#leaderboardTable thead th {
+    text-align: left;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #6b7280;
+    padding-bottom: 6px;
+}
+
+#leaderboardTable tbody tr:nth-child(odd) { background: rgba(15,23,42,0.95); }
+#leaderboardTable tbody tr:nth-child(even) { background: rgba(15,23,42,0.75); }
+
+#leaderboardTable tbody td {
+    padding: 6px 6px;
+    font-size: 13px;
+}
+
+#leaderboardTable tbody tr:first-child td {
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+}
+
+#leaderboardTable tbody tr:last-child td {
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+}
+
+#leaderboardTable tbody td:nth-child(1) { width: 28px; color: #6b7280; }
+#leaderboardTable tbody td:nth-child(3) { text-align: right; font-variant-numeric: tabular-nums; }
+
+.modal {
+    position: absolute;
+    left: 0; top: 0; right: 0; bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(circle at top, rgba(15,23,42,0.95), rgba(15,23,42,0.98));
+}
+
+.modal.hidden { display: none; }
+
+.modal-card {
+    background: #020617;
+    padding: 22px 22px 18px 22px;
+    border-radius: 16px;
+    width: 340px;
+    box-shadow: 0 26px 60px rgba(0,0,0,0.85);
+    border: 1px solid #1f2937;
+}
+
+.modal-card h2 { margin: 0 0 4px 0; font-size: 18px; }
+.modal-text { margin: 0 0 12px 0; font-size: 13px; color: #9ca3af; }
+.modal-card input {
+    width: 100%;
+    padding: 9px 12px;
+    margin-bottom: 14px;
+    box-sizing: border-box;
+    border-radius: 10px;
+    background: #020617;
+    border: 1px solid #1f2937;
+    color: #e5e7eb;
+}
+.modal-card input:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 1px #3b82f6;
+}
+.modal-actions { text-align: right; }
+.modal-actions button {
+    padding: 8px 14px;
+    background: linear-gradient(to right, #3b82f6, #6366f1);
+    color: #fff;
+    border: none;
+    border-radius: 999px;
+    cursor: pointer;
+    font-size: 13px;
+}
+.modal-actions button:hover { filter: brightness(1.05); }
