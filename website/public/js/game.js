@@ -227,6 +227,8 @@ class Game {
                 this.level++;
                 this.dropInterval *= 0.9;
             }
+            // Send updated score to server immediately
+            this._sendScoreToServer(this.playerName, this.score);
         }
     }
 
