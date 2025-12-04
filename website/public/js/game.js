@@ -34,7 +34,7 @@ class Game {
 
         // shared online leaderboard via websocket
         this.ws = null;
-        this.wsUrl = 'wss://tetris.mjdawson.net:441';
+        this.wsUrl = 'wss://tetris-server.mjdawson.net:441';
 
         // bind UI elements (modal, leaderboard)
         this._bindUI();
