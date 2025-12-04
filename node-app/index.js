@@ -174,16 +174,27 @@ app.get('/db-check', async (req, res) => {
 });
 
 // Initialize database, then start server
-initDatabase()
-  .then(() => {
-    server.listen(port, () => {
-      console.log(`HTTP/WebSocket server listening on port ${port}`);
-    });
-  })
-  .catch((err) => {
-    console.error('Failed to initialize database:', err);
-    process.exit(1);
-  });
+// Retry logic for database connection
+async function startServer() {
+  let retries = 10;
+  while (retries > 0) {
+    try {
+      await initDatabase();
+      server.listen(port, () => {
+        console.log(`HTTP/WebSocket server listening on port ${port}`);
+      });
+      return;
+    } catch (err) {
+      console.error(`Failed to initialize database (retries left: ${retries}):`, err.message);
+      retries--;
+      await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds before retrying
+    }
+  }
+  console.error('Could not connect to database after multiple attempts. Exiting.');
+  process.exit(1);
+}
+
+startServer();
 
 // Graceful shutdown
 process.on('SIGINT', () => {
