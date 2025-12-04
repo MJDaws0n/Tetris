@@ -69,6 +69,21 @@ class Game {
         return new Piece(type);
     }
 
+    getDropInterval(level) {
+        // Approximate NES Tetris speeds in milliseconds
+        // Level 1 starts at 800ms (48 frames)
+        const speeds = [
+            800, 717, 633, 550, 467, 383, 300, 217, 133, 100, // Levels 1-10
+            83, 83, 83, 67, 67, 67, 50, 50, 50, 33            // Levels 11-20
+        ];
+        
+        if (level <= speeds.length) {
+            return speeds[level - 1];
+        }
+        // Cap at very fast speed for high levels
+        return level >= 29 ? 17 : 33;
+    }
+
     start() {
         // prompt for player name before starting
         this.showNameModal();
@@ -85,7 +100,7 @@ class Game {
         this.level = 1;
         this.linesCleared = 0;
         this.gameOver = false;
-        this.dropInterval = 1000;
+        this.dropInterval = this.getDropInterval(this.level);
         this.lastDropTime = 0;
         this.startTime = performance.now();
         this.elapsedTime = 0;
@@ -225,7 +240,7 @@ class Game {
             this.score += linesCleared * 100;
             if (this.linesCleared >= this.level * 10) {
                 this.level++;
-                this.dropInterval *= 0.9;
+                this.dropInterval = this.getDropInterval(this.level);
             }
             // Send updated score to server immediately
             this._sendScoreToServer(this.playerName, this.score);
