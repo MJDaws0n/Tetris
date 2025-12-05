@@ -65,9 +65,31 @@ body,html {
 .game-area {
     flex: 1 1 auto;
     display: flex;
-    align-items: center;
+    align-items: start;
     justify-content: center;
-    padding: 20px 24px 24px 24px;
+    position: relative;
+}
+
+.score-popups {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    pointer-events: none;
+    overflow: hidden;
+}
+
+.score-popup {
+    position: absolute;
+    color: #fff;
+    font-weight: bold;
+    font-size: 24px;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+    animation: floatUp 1s ease-out forwards;
+    z-index: 100;
+}
+
+@keyframes floatUp {
+    0% { transform: translateY(0) scale(1); opacity: 1; }
+    100% { transform: translateY(-40px) scale(1.2); opacity: 0; }
 }
 
 canvas{
@@ -217,6 +239,21 @@ canvas{
     outline: none;
     border-color: #3b82f6;
     box-shadow: 0 0 0 1px #3b82f6;
+}
+.modal-option {
+    margin-bottom: 18px;
+    font-size: 13px;
+    color: #9ca3af;
+}
+.modal-option label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+}
+.modal-option input[type="checkbox"] {
+    width: auto;
+    margin: 0;
 }
 .modal-actions { text-align: right; }
 .modal-actions button {

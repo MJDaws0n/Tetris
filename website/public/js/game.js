@@ -14,6 +14,10 @@ class Game {
         // UI area is handled in the sidebar; canvas only renders the playfield
         // extra space at the top so pieces aren't cut off
         this.topOffset = 14;
+        
+        // Bind resize handler
+        window.addEventListener('resize', () => this._fitCanvas());
+        
         // make canvas match the logical board size and scale for HiDPI screens
         this._fitCanvas();
         this.board = this.createBoard();
@@ -31,6 +35,11 @@ class Game {
         this.elapsedTime = 0;
         this.playerName = null;
         this.leaderboardKey = 'tetris_leaderboard_v1';
+        this.prefsKey = 'tetris_prefs_v1';
+        this.ghostBlockEnabled = true;
+        this.lockDelay = 500; // ms
+        this.lockStartTime = null;
+        this.sessionId = null;
 
         // shared online leaderboard via websocket
         this.ws = null;
@@ -47,16 +56,51 @@ class Game {
     }
 
     _fitCanvas() {
+        const dpr = window.devicePixelRatio || 1;
+        
+        // Calculate available height in the game area container
+        const gameArea = document.getElementById('gameArea');
+        if (!gameArea) return;
+
+        // Get available height (viewport height minus header/padding)
+        // We want some padding on top/bottom
+        const availableHeight = gameArea.clientHeight - 40; 
+        const availableWidth = gameArea.clientWidth - 40;
+
+        // Base dimensions
+        const boardRows = this.boardHeight;
+        const boardCols = this.boardWidth;
+        
+        // Calculate max cell size that fits in height
+        // We need (boardRows * cellSize) + topOffset <= availableHeight
+        const maxCellHeight = (availableHeight - this.topOffset) / boardRows;
+        
+        // Calculate max cell size that fits in width
+        const maxCellWidth = availableWidth / boardCols;
+        
+        // Use the smaller of the two to ensure it fits
+        // But don't go larger than our "ideal" size of 28
+        this.cellSize = Math.min(28, Math.floor(Math.min(maxCellHeight, maxCellWidth)));
+        
+        // Ensure minimum playable size
+        this.cellSize = Math.max(10, this.cellSize);
+
         const totalWidth = this.boardWidth * this.cellSize;
         const totalHeight = this.boardHeight * this.cellSize + (this.topOffset || 0);
-        const dpr = window.devicePixelRatio || 1;
+        
         this.canvas.width = Math.floor(totalWidth * dpr);
         this.canvas.height = Math.floor(totalHeight * dpr);
         this.canvas.style.width = totalWidth + 'px';
         this.canvas.style.height = totalHeight + 'px';
         this.canvas.style.display = 'block';
+        
         this.context.setTransform(1, 0, 0, 1, 0, 0);
         this.context.scale(dpr, dpr);
+        
+        // Redraw if game is running
+        if (this.board) {
+            this.draw();
+        }
     }
 
     createBoard() {
@@ -105,6 +149,11 @@ class Game {
         this.startTime = performance.now();
         this.elapsedTime = 0;
         this.updateSidebar();
+
+        // Start new session for anti-cheat
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            this.ws.send(JSON.stringify({ type: 'start_game' }));
+        }
     }
 
     update(time) {
@@ -123,7 +172,15 @@ class Game {
 
         const deltaTime = time - this.lastDropTime;
 
-        if (deltaTime > this.dropInterval) {
+        // Handle lock delay
+        if (this.lockStartTime !== null) {
+            if (time - this.lockStartTime > this.lockDelay) {
+                this.lockPiece();
+                this.clearLines();
+                this.spawnNextPiece();
+                this.lockStartTime = null;
+            }
+        } else if (deltaTime > this.dropInterval) {
             this.lastDropTime = time;
             this.moveDown();
         }
@@ -132,32 +189,50 @@ class Game {
         requestAnimationFrame((time) => this.update(time));
     }
 
+    spawnNextPiece() {
+        this.currentPiece = this.nextPiece;
+        this.nextPiece = this.randomPiece();
+        this.canHold = true;
+        this.currentPiece.setPosition(Math.floor(this.boardWidth / 2) - 1, 0);
+        if (!this.validMove(this.currentPiece, 0, 0)) {
+            this.gameOver = true;
+            this.handleGameOver();
+        }
+    }
+
     moveDown() {
         if (this.validMove(this.currentPiece, 0, 1)) {
             this.currentPiece.y++;
+            // If we were locking but moved down successfully, cancel lock (or reset it)
+            // Standard Tetris resets lock delay on successful movement if it touches ground again
+            // For simplicity, if we move down freely, we are not locking.
+            this.lockStartTime = null;
         } else {
-            this.lockPiece();
-            this.clearLines();
-            this.currentPiece = this.nextPiece;
-            this.nextPiece = this.randomPiece();
-            this.canHold = true;
-            this.currentPiece.setPosition(Math.floor(this.boardWidth / 2) - 1, 0);
-            if (!this.validMove(this.currentPiece, 0, 0)) {
-                this.gameOver = true;
-                this.handleGameOver();
+            // Collision below - start lock timer if not started
+            if (this.lockStartTime === null) {
+                this.lockStartTime = performance.now();
             }
+        }
+    }
+
+    resetLockTimer() {
+        if (this.lockStartTime !== null) {
+            // Reset timer to give player more time
+            this.lockStartTime = performance.now();
         }
     }
 
     moveLeft() {
         if (this.validMove(this.currentPiece, -1, 0)) {
             this.currentPiece.x--;
+            this.resetLockTimer();
         }
     }
 
     moveRight() {
         if (this.validMove(this.currentPiece, 1, 0)) {
             this.currentPiece.x++;
+            this.resetLockTimer();
         }
     }
 
@@ -166,6 +241,8 @@ class Game {
         this.currentPiece.rotate();
         if (!this.validMove(this.currentPiece, 0, 0)) {
             this.currentPiece.rotation = originalRotation;
+        } else {
+            this.resetLockTimer();
         }
     }
 
@@ -237,7 +314,12 @@ class Game {
         }
         if (linesCleared > 0) {
             this.linesCleared += linesCleared;
-            this.score += linesCleared * 100;
+            // New scoring: 100 * lines * lines
+            const points = 100 * linesCleared * linesCleared;
+            this.score += points;
+            
+            this.showScorePopup(points);
+
             if (this.linesCleared >= this.level * 10) {
                 this.level++;
                 this.dropInterval = this.getDropInterval(this.level);
@@ -245,6 +327,28 @@ class Game {
             // Send updated score to server immediately
             this._sendScoreToServer(this.playerName, this.score);
         }
+    }
+
+    showScorePopup(points) {
+        const container = document.getElementById('scorePopups');
+        if (!container) return;
+
+        const popup = document.createElement('div');
+        popup.className = 'score-popup';
+        popup.textContent = `+${points}`;
+        
+        // Position roughly in the center of the game area
+        // (A more advanced version would map board coordinates to screen pixels)
+        popup.style.left = '50%';
+        popup.style.top = '40%';
+        popup.style.transform = 'translate(-50%, -50%)';
+
+        container.appendChild(popup);
+
+        // Remove after animation
+        setTimeout(() => {
+            if (popup.parentNode) popup.parentNode.removeChild(popup);
+        }, 1000);
     }
 
     handleKey(event) {
@@ -281,10 +385,15 @@ class Game {
                 this.hold();
                 break;
             case ' ':
+                // Hard drop
                 while (this.validMove(this.currentPiece, 0, 1)) {
                     this.currentPiece.y++;
                 }
-                this.moveDown();
+                // Lock immediately on hard drop
+                this.lockPiece();
+                this.clearLines();
+                this.spawnNextPiece();
+                this.lockStartTime = null;
                 break;
         }
     }
@@ -294,10 +403,33 @@ class Game {
         this.context.save();
         this.context.translate(0, this.topOffset || 0);
         this.drawBoard();
-        if (this.currentPiece) this.drawPiece(this.currentPiece);
+        
+        if (this.currentPiece) {
+            // Draw ghost piece
+            if (this.ghostBlockEnabled) {
+                this.drawGhostPiece();
+            }
+            this.drawPiece(this.currentPiece);
+        }
+        
         // score and next piece are displayed in the sidebar (DOM)
         this.updateSidebar();
         this.context.restore();
+    }
+
+    drawGhostPiece() {
+        const ghost = new Piece(this.currentPiece.type);
+        ghost.matrix = this.currentPiece.matrix; // Copy rotation state
+        ghost.x = this.currentPiece.x;
+        ghost.y = this.currentPiece.y;
+
+        while (this.validMove(ghost, 0, 1)) {
+            ghost.y++;
+        }
+
+        this.context.globalAlpha = 0.2;
+        this.drawPiece(ghost);
+        this.context.globalAlpha = 1.0;
     }
 
     drawBoard() {
@@ -407,10 +539,33 @@ class Game {
         const modal = document.getElementById('nameModal');
         const input = document.getElementById('playerNameInput');
         const startBtn = document.getElementById('startBtn');
+        const ghostToggle = document.getElementById('ghostBlockToggle');
+
+        // Load saved preferences
+        const savedPrefs = this.loadPrefs();
+        if (input && savedPrefs.name) input.value = savedPrefs.name;
+        if (ghostToggle && savedPrefs.ghostBlock !== undefined) {
+            ghostToggle.checked = savedPrefs.ghostBlock;
+        }
+
         if (startBtn && input && modal) {
             startBtn.addEventListener('click', () => {
-                const name = (input.value || 'Anonymous').trim();
-                this.playerName = name || 'Anonymous';
+                // Remove spaces from name
+                let name = (input.value || 'Anonymous').trim().replace(/\s+/g, '');
+                if (!name) name = 'Anonymous';
+                
+                this.playerName = name;
+                
+                if (ghostToggle) {
+                    this.ghostBlockEnabled = ghostToggle.checked;
+                }
+
+                // Save preferences
+                this.savePrefs({
+                    name: this.playerName,
+                    ghostBlock: this.ghostBlockEnabled
+                });
+
                 modal.classList.add('hidden');
                 this.reset();
                 this.renderLeaderboard();
@@ -424,12 +579,32 @@ class Game {
         this.renderLeaderboard();
     }
 
+    loadPrefs() {
+        try {
+            const raw = localStorage.getItem(this.prefsKey);
+            return raw ? JSON.parse(raw) : {};
+        } catch (e) { return {}; }
+    }
+
+    savePrefs(prefs) {
+        try { localStorage.setItem(this.prefsKey, JSON.stringify(prefs)); } catch (e) {}
+    }
+
     showNameModal() {
         const modal = document.getElementById('nameModal');
         const input = document.getElementById('playerNameInput');
         if (!modal) { this.reset(); requestAnimationFrame((time) => this.update(time)); return; }
+        
+        // Pre-fill name from saved prefs if available
+        const savedPrefs = this.loadPrefs();
+        if (input && savedPrefs.name) {
+            input.value = savedPrefs.name;
+        } else if (input) {
+            input.value = '';
+        }
+
         modal.classList.remove('hidden');
-        if (input) { input.value = ''; input.focus(); }
+        if (input) { input.focus(); }
     }
 
     loadLeaderboard() {
@@ -526,6 +701,11 @@ class Game {
                 return;
             }
 
+            if (payload.type === 'session_started') {
+                this.sessionId = payload.sessionId;
+                return;
+            }
+
             // expected shape: { names: [...], scores: [...] }
             if (!payload || !Array.isArray(payload.names) || !Array.isArray(payload.scores)) return;
 
@@ -573,7 +753,13 @@ class Game {
 
     _sendScoreToServer(name, score) {
         if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
-        const payload = { name: name || 'Anonymous', score: score || 0 };
+        const payload = { 
+            type: 'submit_score',
+            sessionId: this.sessionId,
+            name: name || 'Anonymous', 
+            score: score || 0,
+            lines: this.linesCleared
+        };
         try {
             this.ws.send(JSON.stringify(payload));
         } catch (e) {}

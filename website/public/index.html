@@ -3,12 +3,12 @@
   <head>
     <meta charset="UTF-8">
     <title>Tetris</title>
-    <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="/styles.css?=2.0.1">
   </head>
   <body>
     <div id="app" class="app">
       <header class="app-header">
-        <div class="app-title">Tetris by Max</div>
+        <div class="app-title">Tetris by Max v2.0.1</div>
         <div class="app-subtitle">Arrow keys to move • Space to drop</div>
       </header>
       <div class="app-main">
@@ -19,11 +19,18 @@
               <h2>Welcome</h2>
               <p class="modal-text">Enter a name for the leaderboard.</p>
               <input id="playerNameInput" type="text" placeholder="Your name" maxlength="20" />
+              <div class="modal-option">
+                <label>
+                  <input type="checkbox" id="ghostBlockToggle" checked>
+                  Enable Ghost Block
+                </label>
+              </div>
               <div class="modal-actions">
                 <button id="startBtn">Start game</button>
               </div>
             </div>
           </div>
+          <div id="scorePopups" class="score-popups"></div>
         </div>
         <aside id="sidebar" class="sidebar">
           <div class="sidebar-card sidebar-current">
@@ -54,9 +61,6 @@
         </aside>
       </div>
     </div>
-
-    <script src="/js/neutralino.js"></script>
-    <script src="/js/main.js"></script>
-    <script src="/js/game.js?=1.0.1"></script>
+    <script src="/js/game.js?=2.0.1"></script>
   </body>
 </html>

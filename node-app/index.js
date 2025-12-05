@@ -2,9 +2,24 @@ const express = require('express');
 const mysql = require('mysql2/promise');
 const WebSocket = require('ws');
 const http = require('http');
+const crypto = require('crypto');
 
 const app = express();
 const port = 3000;
+
+// In-memory session store for anti-cheat validation
+// Map<sessionId, { startTime: number }>
+const sessions = new Map();
+
+// Cleanup old sessions every hour
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, session] of sessions.entries()) {
+    if (now - session.startTime > 24 * 60 * 60 * 1000) { // 24 hours
+      sessions.delete(id);
+    }
+  }
+}, 60 * 60 * 1000);
 
 // Database connection configuration
 const dbConfig = {
@@ -84,32 +99,118 @@ wss.on('connection', (ws) => {
     try {
       const data = JSON.parse(message);
 
-      if (!data.name || data.score === undefined) {
-        ws.send(JSON.stringify({
-          error: 'Invalid message format. Expected: {name: string, score: number}'
-        }));
+      // Handle session start
+      if (data.type === 'start_game') {
+        const sessionId = crypto.randomUUID();
+        sessions.set(sessionId, {
+          startTime: Date.now()
+        });
+        ws.send(JSON.stringify({ type: 'session_started', sessionId }));
         return;
       }
 
-      const name = data.name;
-      const score = Number(data.score);
-
-      if (!Number.isFinite(score) || score <= 0) {
-        ws.send(JSON.stringify({
-          error: 'Score must be a positive number (greater than zero)'
-        }));
+      // Handle leaderboard sync request
+      if (data.type === 'sync') {
+        await sendLeaderboard(ws);
         return;
       }
 
-      await upsertScore(name, score);
-      console.log(`Score recorded: ${name} - ${score}`);
+      // Handle score submission
+      // Support both old format (for backward compat if needed, though we are tightening security)
+      // and new format with sessionId.
+      // For this request, we will ENFORCE sessionId for security.
+      
+      if (data.type === 'submit_score' || (data.name && data.score !== undefined)) {
+        
+        // 1. Validate Payload Structure
+        if (!data.name || data.score === undefined) {
+           ws.send(JSON.stringify({ error: 'Invalid message format' }));
+           return;
+        }
 
-      ws.send(JSON.stringify({
-        success: true,
-        message: `Score for ${name} recorded: ${score}`
-      }));
+        // 2. Validate Session (Anti-Cheat)
+        if (!data.sessionId) {
+           ws.send(JSON.stringify({ error: 'Security violation: Missing session ID' }));
+           return;
+        }
 
-      await broadcastLeaderboard();
+        const session = sessions.get(data.sessionId);
+        if (!session) {
+           ws.send(JSON.stringify({ error: 'Security violation: Invalid or expired session' }));
+           return;
+        }
+
+        const name = data.name.replace(/\s+/g, '');
+        const score = Number(data.score);
+        const lines = Number(data.lines || 0); // Default to 0 if missing, but we should send it
+
+        if (!name) {
+          ws.send(JSON.stringify({ error: 'Name cannot be empty' }));
+          return;
+        }
+
+        if (!Number.isFinite(score) || score <= 0) {
+           // It's possible to have 0 score, but usually we only submit positive scores.
+           // If score is 0, we can just ignore it or accept it.
+           if (score === 0) return; 
+           ws.send(JSON.stringify({ error: 'Invalid score' }));
+           return;
+        }
+
+        // 3. Feasibility Checks
+        const now = Date.now();
+        const elapsedSeconds = (now - session.startTime) / 1000;
+
+        // Check A: Time Travel (Score received before game could reasonably start)
+        if (elapsedSeconds < 0.1) {
+           ws.send(JSON.stringify({ error: 'Too fast' }));
+           return;
+        }
+
+        // Check B: Line Clear Rate
+        // World record pace is ~3-4 lines/sec. We allow 10 lines/sec as a safe upper bound.
+        // We add a small buffer (20 lines) for initial burst or lag.
+        const maxPossibleLines = 20 + (elapsedSeconds * 10);
+        if (lines > maxPossibleLines) {
+           console.warn(`Rejected score: Impossible line rate. Lines: ${lines}, Elapsed: ${elapsedSeconds}`);
+           ws.send(JSON.stringify({ error: 'Score rejected: Impossible gameplay detected' }));
+           return;
+        }
+
+        // Check C: Score vs Lines
+        // Formula: score += 100 * lines * lines
+        // Max points per line is 400 (for a 4-line clear).
+        // So score <= lines * 400.
+        // We allow a small margin for potential future scoring changes or lag, but 400 is the hard math limit.
+        // If lines is 0, score MUST be 0.
+        if (lines === 0 && score > 0) {
+           console.warn(`Rejected score: Score > 0 with 0 lines.`);
+           ws.send(JSON.stringify({ error: 'Score rejected: Score mismatch' }));
+           return;
+        }
+
+        if (score > lines * 400) {
+           console.warn(`Rejected score: Score too high for lines. Score: ${score}, Lines: ${lines}`);
+           ws.send(JSON.stringify({ error: 'Score rejected: Score mismatch' }));
+           return;
+        }
+
+        // If we get here, the score is likely valid
+        await upsertScore(name, score);
+        console.log(`Score recorded: ${name} - ${score} (Lines: ${lines}, Time: ${elapsedSeconds.toFixed(1)}s)`);
+
+        ws.send(JSON.stringify({
+          success: true,
+          message: `Score for ${name} recorded: ${score}`
+        }));
+
+        await broadcastLeaderboard();
+        return;
+      }
+      
+      // Unknown message type
+      ws.send(JSON.stringify({ error: 'Unknown message type' }));
+
     } catch (error) {
       console.error('Error processing message:', error);
       ws.send(JSON.stringify({
