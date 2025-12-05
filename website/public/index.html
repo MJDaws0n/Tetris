@@ -3,12 +3,12 @@
   <head>
     <meta charset="UTF-8">
     <title>Tetris</title>
-    <link rel="stylesheet" href="/styles.css?=2.0.1">
+    <link rel="stylesheet" href="/styles.css?=2.0.2">
   </head>
   <body>
     <div id="app" class="app">
       <header class="app-header">
-        <div class="app-title">Tetris by Max v2.0.1</div>
+        <div class="app-title">Tetris by Max v2.0.2</div>
         <div class="app-subtitle">Arrow keys to move • Space to drop</div>
       </header>
       <div class="app-main">
@@ -30,6 +30,25 @@
               </div>
             </div>
           </div>
+
+          <!-- Full Leaderboard Modal -->
+          <div id="fullLeaderboardModal" class="modal hidden">
+            <div class="modal-card modal-card-large">
+              <div class="modal-header">
+                <h2>Global Leaderboard</h2>
+                <button id="closeLeaderboardBtn" class="close-btn">&times;</button>
+              </div>
+              <div class="leaderboard-scroll-area">
+                <table id="fullLeaderboardTable">
+                  <thead>
+                    <tr><th>#</th><th>Name</th><th>Score</th></tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
           <div id="scorePopups" class="score-popups"></div>
         </div>
         <aside id="sidebar" class="sidebar">
@@ -61,6 +80,6 @@
         </aside>
       </div>
     </div>
-    <script src="/js/game.js?=2.0.1"></script>
+    <script src="/js/game.js?=2.0.2"></script>
   </body>
 </html>

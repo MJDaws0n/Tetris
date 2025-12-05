@@ -40,6 +40,7 @@ class Game {
         this.lockDelay = 500; // ms
         this.lockStartTime = null;
         this.sessionId = null;
+        this.allScores = []; // Store full leaderboard
 
         // shared online leaderboard via websocket
         this.ws = null;
@@ -540,6 +541,32 @@ class Game {
         const input = document.getElementById('playerNameInput');
         const startBtn = document.getElementById('startBtn');
         const ghostToggle = document.getElementById('ghostBlockToggle');
+        
+        // Full leaderboard modal bindings
+        const fullLeaderboardModal = document.getElementById('fullLeaderboardModal');
+        const closeLeaderboardBtn = document.getElementById('closeLeaderboardBtn');
+        const sidebarLeaderboard = document.querySelector('.sidebar-leaderboard');
+
+        if (sidebarLeaderboard && fullLeaderboardModal) {
+            sidebarLeaderboard.addEventListener('click', () => {
+                this.showFullLeaderboard();
+            });
+        }
+
+        if (closeLeaderboardBtn && fullLeaderboardModal) {
+            closeLeaderboardBtn.addEventListener('click', () => {
+                fullLeaderboardModal.classList.add('hidden');
+            });
+        }
+
+        // Close on click outside
+        if (fullLeaderboardModal) {
+            fullLeaderboardModal.addEventListener('click', (e) => {
+                if (e.target === fullLeaderboardModal) {
+                    fullLeaderboardModal.classList.add('hidden');
+                }
+            });
+        }
 
         // Load saved preferences
         const savedPrefs = this.loadPrefs();
@@ -671,6 +698,42 @@ class Game {
         });
     }
 
+    showFullLeaderboard() {
+        const modal = document.getElementById('fullLeaderboardModal');
+        const tbody = document.querySelector('#fullLeaderboardTable tbody');
+        if (!modal || !tbody) return;
+
+        // Filter non-zero scores and sort
+        const list = this.allScores
+            .filter(entry => entry.score > 0)
+            .sort((a, b) => b.score - a.score);
+
+        tbody.innerHTML = '';
+        
+        if (list.length === 0) {
+            const tr = document.createElement('tr');
+            const td = document.createElement('td'); 
+            td.colSpan = 3; 
+            td.style.textAlign = 'center'; 
+            td.textContent = 'No scores yet';
+            td.style.padding = '20px';
+            td.style.color = '#6b7280';
+            tr.appendChild(td);
+            tbody.appendChild(tr);
+        } else {
+            list.forEach((entry, index) => {
+                const tr = document.createElement('tr');
+                const rankTd = document.createElement('td'); rankTd.textContent = index + 1;
+                const nameTd = document.createElement('td'); nameTd.textContent = entry.name;
+                const scoreTd = document.createElement('td'); scoreTd.textContent = entry.score;
+                tr.appendChild(rankTd); tr.appendChild(nameTd); tr.appendChild(scoreTd);
+                tbody.appendChild(tr);
+            });
+        }
+
+        modal.classList.remove('hidden');
+    }
+
     handleGameOver() {
         // save score under current player name
         this.addScore(this.playerName || 'Anonymous', this.score);
@@ -715,6 +778,15 @@ class Game {
                 const name = (payload.names[i] || 'Anonymous').toString();
                 const score = Number(payload.scores[i]) || 0;
                 combined.push({ name, score, date: Date.now() });
+            }
+
+            // Update full leaderboard cache
+            this.allScores = combined;
+            
+            // If modal is open, refresh it live
+            const modal = document.getElementById('fullLeaderboardModal');
+            if (modal && !modal.classList.contains('hidden')) {
+                this.showFullLeaderboard();
             }
 
             // merge remote list into local leaderboard, keeping best scores per name (case-insensitive)
