@@ -238,13 +238,35 @@ class Game {
     }
 
     rotate() {
-        const originalRotation = this.currentPiece.rotation;
-        this.currentPiece.rotate();
-        if (!this.validMove(this.currentPiece, 0, 0)) {
-            this.currentPiece.rotation = originalRotation;
-        } else {
+        const piece = this.currentPiece;
+        const originalRotation = piece.rotation;
+        const originalMatrix = piece.matrix.map(row => row.slice());
+        const originalX = piece.x;
+        const originalY = piece.y;
+
+        piece.rotate();
+        // Try normal rotation
+        if (this.validMove(piece, 0, 0)) {
             this.resetLockTimer();
+            return;
         }
+        // Try wall kick left
+        if (this.validMove(piece, -1, 0)) {
+            piece.x -= 1;
+            this.resetLockTimer();
+            return;
+        }
+        // Try wall kick right
+        if (this.validMove(piece, 1, 0)) {
+            piece.x += 1;
+            this.resetLockTimer();
+            return;
+        }
+        // Revert rotation and position
+        piece.rotation = originalRotation;
+        piece.matrix = originalMatrix;
+        piece.x = originalX;
+        piece.y = originalY;
     }
 
     hold() {
