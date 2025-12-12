@@ -36,9 +36,13 @@ class Game {
         this.playerName = null;
         this.leaderboardKey = 'tetris_leaderboard_v1';
         this.prefsKey = 'tetris_prefs_v1';
+        this.hardModeKey = 'tetris_hard_mode';
         this.ghostBlockEnabled = true;
+        this.hardMode = false;
         this.lockDelay = 500; // ms
         this.lockStartTime = null;
+        this.lockResetCount = 0; // Track number of lock delay resets
+        this.maxLockResets = 15; // Cap on lock delay resets to prevent infinite floating
         this.sessionId = null;
         this.allScores = []; // Store full leaderboard
 
@@ -142,11 +146,13 @@ class Game {
         this.canHold = true;
         this.currentPiece.setPosition(Math.floor(this.boardWidth / 2) - 1, 0);
         this.score = 0;
-        this.level = 1;
+        this.level = this.hardMode ? 10 : 1;
         this.linesCleared = 0;
         this.gameOver = false;
         this.dropInterval = this.getDropInterval(this.level);
         this.lastDropTime = 0;
+        this.lockStartTime = null;
+        this.lockResetCount = 0;
         this.startTime = performance.now();
         this.elapsedTime = 0;
         this.updateSidebar();
@@ -195,6 +201,9 @@ class Game {
         this.nextPiece = this.randomPiece();
         this.canHold = true;
         this.currentPiece.setPosition(Math.floor(this.boardWidth / 2) - 1, 0);
+        // Reset lock state for new piece
+        this.lockStartTime = null;
+        this.lockResetCount = 0;
         if (!this.validMove(this.currentPiece, 0, 0)) {
             this.gameOver = true;
             this.handleGameOver();
@@ -204,36 +213,71 @@ class Game {
     moveDown() {
         if (this.validMove(this.currentPiece, 0, 1)) {
             this.currentPiece.y++;
-            // If we were locking but moved down successfully, cancel lock (or reset it)
-            // Standard Tetris resets lock delay on successful movement if it touches ground again
-            // For simplicity, if we move down freely, we are not locking.
+            // If we moved down successfully, cancel lock delay and reset counter
             this.lockStartTime = null;
+            this.lockResetCount = 0;
         } else {
             // Collision below - start lock timer if not started
             if (this.lockStartTime === null) {
                 this.lockStartTime = performance.now();
+                this.lockResetCount = 0;
             }
         }
     }
 
     resetLockTimer() {
-        if (this.lockStartTime !== null) {
-            // Reset timer to give player more time
+        if (this.lockStartTime !== null && this.lockResetCount < this.maxLockResets) {
+            // Reset timer to give player more time, but only up to the cap
             this.lockStartTime = performance.now();
+            this.lockResetCount++;
+        }
+    }
+
+    // Check if piece is grounded (cannot move down)
+    isGrounded() {
+        return !this.validMove(this.currentPiece, 0, 1);
+    }
+
+    // Update lock state - call after any movement to check if piece should still be locking
+    updateLockState() {
+        if (this.isGrounded()) {
+            // Piece is on ground/block, start or continue lock delay
+            if (this.lockStartTime === null) {
+                this.lockStartTime = performance.now();
+                this.lockResetCount = 0;
+            }
+        } else {
+            // Piece can still fall, cancel lock delay
+            this.lockStartTime = null;
+            this.lockResetCount = 0;
         }
     }
 
     moveLeft() {
         if (this.validMove(this.currentPiece, -1, 0)) {
             this.currentPiece.x--;
-            this.resetLockTimer();
+            // After moving, check if we're still grounded
+            // If not grounded anymore, cancel lock delay (piece can fall)
+            // If still grounded, reset the lock timer (if under cap)
+            if (this.isGrounded()) {
+                this.resetLockTimer();
+            } else {
+                this.lockStartTime = null;
+                this.lockResetCount = 0;
+            }
         }
     }
 
     moveRight() {
         if (this.validMove(this.currentPiece, 1, 0)) {
             this.currentPiece.x++;
-            this.resetLockTimer();
+            // After moving, check if we're still grounded
+            if (this.isGrounded()) {
+                this.resetLockTimer();
+            } else {
+                this.lockStartTime = null;
+                this.lockResetCount = 0;
+            }
         }
     }
 
@@ -245,24 +289,30 @@ class Game {
         const originalY = piece.y;
 
         piece.rotate();
-        // Try normal rotation
-        if (this.validMove(piece, 0, 0)) {
-            this.resetLockTimer();
-            return;
+        
+        // Wall kick offsets to try (based on SRS-lite)
+        // For I-piece, we need larger offsets
+        const isIPiece = piece.type === 'I';
+        const kickOffsets = isIPiece 
+            ? [[0, 0], [-1, 0], [1, 0], [-2, 0], [2, 0], [0, -1], [-1, -1], [1, -1]]
+            : [[0, 0], [-1, 0], [1, 0], [0, -1], [-1, -1], [1, -1], [0, 1]];
+        
+        for (const [dx, dy] of kickOffsets) {
+            if (this.validMove(piece, dx, dy)) {
+                piece.x += dx;
+                piece.y += dy;
+                // After rotation, update lock state based on new position
+                if (this.isGrounded()) {
+                    this.resetLockTimer();
+                } else {
+                    this.lockStartTime = null;
+                    this.lockResetCount = 0;
+                }
+                return;
+            }
         }
-        // Try wall kick left
-        if (this.validMove(piece, -1, 0)) {
-            piece.x -= 1;
-            this.resetLockTimer();
-            return;
-        }
-        // Try wall kick right
-        if (this.validMove(piece, 1, 0)) {
-            piece.x += 1;
-            this.resetLockTimer();
-            return;
-        }
-        // Revert rotation and position
+        
+        // Revert rotation and position if no valid position found
         piece.rotation = originalRotation;
         piece.matrix = originalMatrix;
         piece.x = originalX;
@@ -563,6 +613,7 @@ class Game {
         const input = document.getElementById('playerNameInput');
         const startBtn = document.getElementById('startBtn');
         const ghostToggle = document.getElementById('ghostBlockToggle');
+        const hardModeToggle = document.getElementById('hardModeToggle');
         
         // Full leaderboard modal bindings
         const fullLeaderboardModal = document.getElementById('fullLeaderboardModal');
@@ -596,6 +647,12 @@ class Game {
         if (ghostToggle && savedPrefs.ghostBlock !== undefined) {
             ghostToggle.checked = savedPrefs.ghostBlock;
         }
+        
+        // Load hard mode from session storage
+        const savedHardMode = sessionStorage.getItem(this.hardModeKey);
+        if (hardModeToggle && savedHardMode !== null) {
+            hardModeToggle.checked = savedHardMode === 'true';
+        }
 
         if (startBtn && input && modal) {
             startBtn.addEventListener('click', () => {
@@ -607,6 +664,12 @@ class Game {
                 
                 if (ghostToggle) {
                     this.ghostBlockEnabled = ghostToggle.checked;
+                }
+                
+                if (hardModeToggle) {
+                    this.hardMode = hardModeToggle.checked;
+                    // Save to session storage
+                    sessionStorage.setItem(this.hardModeKey, this.hardMode.toString());
                 }
 
                 // Save preferences
