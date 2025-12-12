@@ -44,7 +44,8 @@ class Game {
         this.lockResetCount = 0; // Track number of lock delay resets
         this.maxLockResets = 15; // Cap on lock delay resets to prevent infinite floating
         this.sessionId = null;
-        this.allScores = []; // Store full leaderboard
+        this.allScores = []; // Store full leaderboard (normal mode)
+        this.allScoresHard = []; // Store full leaderboard (hard mode)
 
         // shared online leaderboard via websocket
         this.ws = null;
@@ -339,6 +340,10 @@ class Game {
         // Reset rotation of held piece for display purposes
         this.holdPiece.rotation = 0;
 
+        // Reset lock state - new piece should fall freely from the top
+        this.lockStartTime = null;
+        this.lockResetCount = 0;
+
         this.canHold = false;
         this.updateSidebar();
     }
@@ -618,13 +623,15 @@ class Game {
         // Full leaderboard modal bindings
         const fullLeaderboardModal = document.getElementById('fullLeaderboardModal');
         const closeLeaderboardBtn = document.getElementById('closeLeaderboardBtn');
-        const sidebarLeaderboard = document.querySelector('.sidebar-leaderboard');
+        const sidebarLeaderboards = document.querySelectorAll('.sidebar-leaderboard');
 
-        if (sidebarLeaderboard && fullLeaderboardModal) {
-            sidebarLeaderboard.addEventListener('click', () => {
-                this.showFullLeaderboard();
+        // Handle clicks on both sidebar leaderboards
+        sidebarLeaderboards.forEach(leaderboard => {
+            leaderboard.addEventListener('click', () => {
+                const mode = leaderboard.dataset.mode || 'normal';
+                this.showFullLeaderboard(mode);
             });
-        }
+        });
 
         if (closeLeaderboardBtn && fullLeaderboardModal) {
             closeLeaderboardBtn.addEventListener('click', () => {
@@ -640,6 +647,15 @@ class Game {
                 }
             });
         }
+
+        // Leaderboard tab switching
+        const leaderboardTabs = document.querySelectorAll('.leaderboard-tab');
+        leaderboardTabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                const mode = tab.dataset.mode;
+                this._switchLeaderboardTab(mode);
+            });
+        });
 
         // Load saved preferences
         const savedPrefs = this.loadPrefs();
@@ -691,6 +707,28 @@ class Game {
         this.renderLeaderboard();
     }
 
+    _switchLeaderboardTab(mode) {
+        const tabs = document.querySelectorAll('.leaderboard-tab');
+        const normalTable = document.getElementById('fullLeaderboardTable');
+        const hardTable = document.getElementById('fullLeaderboardTableHard');
+
+        tabs.forEach(tab => {
+            if (tab.dataset.mode === mode) {
+                tab.classList.add('active');
+            } else {
+                tab.classList.remove('active');
+            }
+        });
+
+        if (mode === 'hard') {
+            normalTable.classList.add('hidden');
+            hardTable.classList.remove('hidden');
+        } else {
+            normalTable.classList.remove('hidden');
+            hardTable.classList.add('hidden');
+        }
+    }
+
     loadPrefs() {
         try {
             const raw = localStorage.getItem(this.prefsKey);
@@ -719,19 +757,23 @@ class Game {
         if (input) { input.focus(); }
     }
 
-    loadLeaderboard() {
+    loadLeaderboard(hardMode = false) {
         try {
-            const raw = localStorage.getItem(this.leaderboardKey);
+            const key = hardMode ? this.leaderboardKey + '_hard' : this.leaderboardKey;
+            const raw = localStorage.getItem(key);
             return raw ? JSON.parse(raw) : [];
         } catch (e) { return []; }
     }
 
-    saveLeaderboard(list) {
-        try { localStorage.setItem(this.leaderboardKey, JSON.stringify(list)); } catch (e) {}
+    saveLeaderboard(list, hardMode = false) {
+        try { 
+            const key = hardMode ? this.leaderboardKey + '_hard' : this.leaderboardKey;
+            localStorage.setItem(key, JSON.stringify(list)); 
+        } catch (e) {}
     }
 
     addScore(name, score) {
-        const list = this.loadLeaderboard();
+        const list = this.loadLeaderboard(this.hardMode);
         const normalized = (name || 'Anonymous').trim();
         const key = normalized.toLowerCase();
         let found = false;
@@ -754,7 +796,7 @@ class Game {
         list.sort((a, b) => b.score - a.score);
         // keep top 10
         const top = list.slice(0, 10);
-        this.saveLeaderboard(top);
+        this.saveLeaderboard(top, this.hardMode);
         this.renderLeaderboard();
 
         // also send to remote leaderboard if connected
@@ -762,33 +804,61 @@ class Game {
     }
 
     renderLeaderboard() {
+        // Render normal mode leaderboard
         const tbody = document.querySelector('#leaderboardTable tbody');
-        if (!tbody) return;
-        const list = this.loadLeaderboard();
-        tbody.innerHTML = '';
-        if (list.length === 0) {
-            const tr = document.createElement('tr');
-            const td = document.createElement('td'); td.colSpan = 3; td.style.textAlign = 'center'; td.textContent = 'No scores yet';
-            tr.appendChild(td);
-            tbody.appendChild(tr);
-            return;
+        if (tbody) {
+            const list = this.loadLeaderboard(false);
+            tbody.innerHTML = '';
+            if (list.length === 0) {
+                const tr = document.createElement('tr');
+                const td = document.createElement('td'); td.colSpan = 3; td.style.textAlign = 'center'; td.textContent = 'No scores yet';
+                tr.appendChild(td);
+                tbody.appendChild(tr);
+            } else {
+                list.forEach((entry, index) => {
+                    const tr = document.createElement('tr');
+                    const rankTd = document.createElement('td'); rankTd.textContent = index + 1;
+                    const nameTd = document.createElement('td'); nameTd.textContent = entry.name;
+                    const scoreTd = document.createElement('td'); scoreTd.textContent = entry.score;
+                    tr.appendChild(rankTd); tr.appendChild(nameTd); tr.appendChild(scoreTd);
+                    tbody.appendChild(tr);
+                });
+            }
         }
-        list.forEach((entry, index) => {
-            const tr = document.createElement('tr');
-            const rankTd = document.createElement('td'); rankTd.textContent = index + 1;
-            const nameTd = document.createElement('td'); nameTd.textContent = entry.name;
-            const scoreTd = document.createElement('td'); scoreTd.textContent = entry.score;
-            tr.appendChild(rankTd); tr.appendChild(nameTd); tr.appendChild(scoreTd);
-            tbody.appendChild(tr);
-        });
+
+        // Render hard mode leaderboard
+        const tbodyHard = document.querySelector('#leaderboardTableHard tbody');
+        if (tbodyHard) {
+            const listHard = this.loadLeaderboard(true);
+            tbodyHard.innerHTML = '';
+            if (listHard.length === 0) {
+                const tr = document.createElement('tr');
+                const td = document.createElement('td'); td.colSpan = 3; td.style.textAlign = 'center'; td.textContent = 'No scores yet';
+                tr.appendChild(td);
+                tbodyHard.appendChild(tr);
+            } else {
+                listHard.forEach((entry, index) => {
+                    const tr = document.createElement('tr');
+                    const rankTd = document.createElement('td'); rankTd.textContent = index + 1;
+                    const nameTd = document.createElement('td'); nameTd.textContent = entry.name;
+                    const scoreTd = document.createElement('td'); scoreTd.textContent = entry.score;
+                    tr.appendChild(rankTd); tr.appendChild(nameTd); tr.appendChild(scoreTd);
+                    tbodyHard.appendChild(tr);
+                });
+            }
+        }
     }
 
-    showFullLeaderboard() {
+    showFullLeaderboard(mode = 'normal') {
         const modal = document.getElementById('fullLeaderboardModal');
         const tbody = document.querySelector('#fullLeaderboardTable tbody');
-        if (!modal || !tbody) return;
+        const tbodyHard = document.querySelector('#fullLeaderboardTableHard tbody');
+        if (!modal || !tbody || !tbodyHard) return;
 
-        // Filter non-zero scores and sort
+        // Switch to the correct tab
+        this._switchLeaderboardTab(mode);
+
+        // Render normal mode full leaderboard
         const list = this.allScores
             .filter(entry => entry.score > 0)
             .sort((a, b) => b.score - a.score);
@@ -813,6 +883,34 @@ class Game {
                 const scoreTd = document.createElement('td'); scoreTd.textContent = entry.score;
                 tr.appendChild(rankTd); tr.appendChild(nameTd); tr.appendChild(scoreTd);
                 tbody.appendChild(tr);
+            });
+        }
+
+        // Render hard mode full leaderboard
+        const listHard = this.allScoresHard
+            .filter(entry => entry.score > 0)
+            .sort((a, b) => b.score - a.score);
+
+        tbodyHard.innerHTML = '';
+        
+        if (listHard.length === 0) {
+            const tr = document.createElement('tr');
+            const td = document.createElement('td'); 
+            td.colSpan = 3; 
+            td.style.textAlign = 'center'; 
+            td.textContent = 'No scores yet';
+            td.style.padding = '20px';
+            td.style.color = '#6b7280';
+            tr.appendChild(td);
+            tbodyHard.appendChild(tr);
+        } else {
+            listHard.forEach((entry, index) => {
+                const tr = document.createElement('tr');
+                const rankTd = document.createElement('td'); rankTd.textContent = index + 1;
+                const nameTd = document.createElement('td'); nameTd.textContent = entry.name;
+                const scoreTd = document.createElement('td'); scoreTd.textContent = entry.score;
+                tr.appendChild(rankTd); tr.appendChild(nameTd); tr.appendChild(scoreTd);
+                tbodyHard.appendChild(tr);
             });
         }
 
@@ -854,9 +952,10 @@ class Game {
                 return;
             }
 
-            // expected shape: { names: [...], scores: [...] }
+            // expected shape: { names: [...], scores: [...], namesHard: [...], scoresHard: [...] }
             if (!payload || !Array.isArray(payload.names) || !Array.isArray(payload.scores)) return;
 
+            // Parse normal mode scores
             const combined = [];
             const len = Math.min(payload.names.length, payload.scores.length);
             for (let i = 0; i < len; i++) {
@@ -865,17 +964,32 @@ class Game {
                 combined.push({ name, score, date: Date.now() });
             }
 
-            // Update full leaderboard cache
+            // Parse hard mode scores
+            const combinedHard = [];
+            if (Array.isArray(payload.namesHard) && Array.isArray(payload.scoresHard)) {
+                const lenHard = Math.min(payload.namesHard.length, payload.scoresHard.length);
+                for (let i = 0; i < lenHard; i++) {
+                    const name = (payload.namesHard[i] || 'Anonymous').toString();
+                    const score = Number(payload.scoresHard[i]) || 0;
+                    combinedHard.push({ name, score, date: Date.now() });
+                }
+            }
+
+            // Update full leaderboard caches
             this.allScores = combined;
+            this.allScoresHard = combinedHard;
             
             // If modal is open, refresh it live
             const modal = document.getElementById('fullLeaderboardModal');
             if (modal && !modal.classList.contains('hidden')) {
-                this.showFullLeaderboard();
+                // Get current active tab
+                const activeTab = document.querySelector('.leaderboard-tab.active');
+                const currentMode = activeTab ? activeTab.dataset.mode : 'normal';
+                this.showFullLeaderboard(currentMode);
             }
 
-            // merge remote list into local leaderboard, keeping best scores per name (case-insensitive)
-            const local = this.loadLeaderboard();
+            // merge remote list into local leaderboard (normal mode)
+            const local = this.loadLeaderboard(false);
             const byKey = new Map();
 
             const upsert = (entry) => {
@@ -893,7 +1007,29 @@ class Game {
             const merged = Array.from(byKey.values());
             merged.sort((a, b) => b.score - a.score);
             const top = merged.slice(0, 10);
-            this.saveLeaderboard(top);
+            this.saveLeaderboard(top, false);
+
+            // merge remote list into local leaderboard (hard mode)
+            const localHard = this.loadLeaderboard(true);
+            const byKeyHard = new Map();
+
+            const upsertHard = (entry) => {
+                const normName = (entry.name || 'Anonymous').trim();
+                const key = normName.toLowerCase();
+                const existing = byKeyHard.get(key);
+                if (!existing || (entry.score || 0) > (existing.score || 0)) {
+                    byKeyHard.set(key, { name: normName, score: entry.score || 0, date: entry.date || Date.now() });
+                }
+            };
+
+            localHard.forEach(upsertHard);
+            combinedHard.forEach(upsertHard);
+
+            const mergedHard = Array.from(byKeyHard.values());
+            mergedHard.sort((a, b) => b.score - a.score);
+            const topHard = mergedHard.slice(0, 10);
+            this.saveLeaderboard(topHard, true);
+
             this.renderLeaderboard();
         });
 
@@ -915,7 +1051,8 @@ class Game {
             sessionId: this.sessionId,
             name: name || 'Anonymous', 
             score: score || 0,
-            lines: this.linesCleared
+            lines: this.linesCleared,
+            hardMode: this.hardMode
         };
         try {
             this.ws.send(JSON.stringify(payload));

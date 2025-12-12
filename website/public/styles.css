@@ -101,6 +101,19 @@ canvas{
     padding: 20px 22px 24px 10px;
     box-sizing: border-box;
     background: linear-gradient(to bottom, #020617, #020617 60%, #030712);
+    overflow-y: auto;
+    max-height: calc(100vh - 60px);
+}
+
+.sidebar::-webkit-scrollbar {
+    width: 6px;
+}
+.sidebar::-webkit-scrollbar-track {
+    background: transparent;
+}
+.sidebar::-webkit-scrollbar-thumb {
+    background: #374151;
+    border-radius: 3px;
 }
 
 .sidebar-card {
@@ -347,6 +360,126 @@ canvas{
 .sidebar-leaderboard:hover::after {
     opacity: 1;
 }
+
+/* Leaderboard Tabs */
+.leaderboard-tabs {
+    display: flex;
+    background: #0f172a;
+    border-bottom: 1px solid #1f2937;
+    padding: 0 16px;
+}
+
+.leaderboard-tab {
+    background: none;
+    border: none;
+    color: #6b7280;
+    padding: 12px 20px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    position: relative;
+    transition: color 0.2s;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.leaderboard-tab:hover {
+    color: #9ca3af;
+}
+
+.leaderboard-tab.active {
+    color: #3b82f6;
+}
+
+.leaderboard-tab.active::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: #3b82f6;
+}
+
+.full-leaderboard-table.hidden {
+    display: none;
+}
+
+/* Hard mode leaderboard table - same styling */
+#leaderboardTableHard {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+#leaderboardTableHard thead th {
+    text-align: left;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #6b7280;
+    padding-bottom: 6px;
+}
+
+#leaderboardTableHard tbody tr:nth-child(odd) { background: rgba(15,23,42,0.95); }
+#leaderboardTableHard tbody tr:nth-child(even) { background: rgba(15,23,42,0.75); }
+
+#leaderboardTableHard tbody td {
+    padding: 6px 6px;
+    font-size: 13px;
+}
+
+#leaderboardTableHard tbody tr:first-child td {
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+}
+
+#leaderboardTableHard tbody tr:last-child td {
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
+}
+
+#leaderboardTableHard tbody td:nth-child(1) { width: 28px; color: #6b7280; }
+#leaderboardTableHard tbody td:nth-child(3) { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Full leaderboard hard table */
+#fullLeaderboardTableHard {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+#fullLeaderboardTableHard thead {
+    position: sticky;
+    top: 0;
+    background: #0f172a;
+    z-index: 1;
+    box-shadow: 0 1px 0 #1f2937;
+}
+
+#fullLeaderboardTableHard th {
+    text-align: left;
+    padding: 12px 24px;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #9ca3af;
+    font-weight: 600;
+}
+
+#fullLeaderboardTableHard td {
+    padding: 10px 24px;
+    border-bottom: 1px solid #111827;
+    color: #e5e7eb;
+    font-size: 14px;
+}
+
+#fullLeaderboardTableHard tr:hover {
+    background: rgba(59, 130, 246, 0.05);
+}
+
+#fullLeaderboardTableHard td:nth-child(1) { width: 40px; color: #6b7280; }
+#fullLeaderboardTableHard td:nth-child(3) { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; color: #ef4444; }
+#fullLeaderboardTableHard th:nth-child(3) { text-align: right; }
 
 .modal-card h2 { margin: 0 0 4px 0; font-size: 18px; }
 .modal-text { margin: 0 0 12px 0; font-size: 13px; color: #9ca3af; }

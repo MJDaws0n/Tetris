@@ -3,12 +3,12 @@
   <head>
     <meta charset="UTF-8">
     <title>Tetris</title>
-    <link rel="stylesheet" href="/styles.css?=2.0.2">
+    <link rel="stylesheet" href="/styles.css?=2.2.1">
   </head>
   <body>
     <div id="app" class="app">
       <header class="app-header">
-        <div class="app-title">Tetris by Max v2.1.0</div>
+        <div class="app-title">Tetris by Max v2.1.1</div>
         <div class="app-subtitle">Arrow keys to move • Space to drop</div>
       </header>
       <div class="app-main">
@@ -44,8 +44,18 @@
                 <h2>Global Leaderboard</h2>
                 <button id="closeLeaderboardBtn" class="close-btn">&times;</button>
               </div>
+              <div class="leaderboard-tabs">
+                <button class="leaderboard-tab active" data-mode="normal">Normal</button>
+                <button class="leaderboard-tab" data-mode="hard">Hard Mode</button>
+              </div>
               <div class="leaderboard-scroll-area">
-                <table id="fullLeaderboardTable">
+                <table id="fullLeaderboardTable" class="full-leaderboard-table">
+                  <thead>
+                    <tr><th>#</th><th>Name</th><th>Score</th></tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+                <table id="fullLeaderboardTableHard" class="full-leaderboard-table hidden">
                   <thead>
                     <tr><th>#</th><th>Name</th><th>Score</th></tr>
                   </thead>
@@ -74,9 +84,18 @@
             <div class="sidebar-card-title">Hold (C)</div>
             <div id="holdPiecePreview" class="next-piece-preview"></div>
           </div>
-          <div class="sidebar-card sidebar-leaderboard">
-            <div class="sidebar-card-title">Leaderboard</div>
+          <div class="sidebar-card sidebar-leaderboard" data-mode="normal">
+            <div class="sidebar-card-title">Leaderboard (Normal)</div>
             <table id="leaderboardTable">
+              <thead>
+                <tr><th>#</th><th>Name</th><th>Score</th></tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div class="sidebar-card sidebar-leaderboard" data-mode="hard">
+            <div class="sidebar-card-title">Leaderboard (Hard)</div>
+            <table id="leaderboardTableHard">
               <thead>
                 <tr><th>#</th><th>Name</th><th>Score</th></tr>
               </thead>
@@ -86,6 +105,6 @@
         </aside>
       </div>
     </div>
-    <script src="/js/game.js?=2.1.0"></script>
+    <script src="/js/game.js?=2.2.1"></script>
   </body>
 </html>

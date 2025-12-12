@@ -51,9 +51,21 @@ async function initDatabase() {
 
   const dbConnection = await mysql.createConnection(dbConfig);
 
-  // Create scores table if it doesn't exist
+  // Create scores table if it doesn't exist (normal mode)
   await dbConnection.query(`
     CREATE TABLE IF NOT EXISTS scores (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      name VARCHAR(255) NOT NULL,
+      name_key VARCHAR(255) NOT NULL,
+      score INT NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY unique_name_key (name_key)
+    ) ENGINE=InnoDB;
+  `);
+
+  // Create scores_hard table for hard mode leaderboard
+  await dbConnection.query(`
+    CREATE TABLE IF NOT EXISTS scores_hard (
       id INT AUTO_INCREMENT PRIMARY KEY,
       name VARCHAR(255) NOT NULL,
       name_key VARCHAR(255) NOT NULL,
@@ -67,22 +79,24 @@ async function initDatabase() {
 }
 
 // Helper: get leaderboard from DB
-async function getLeaderboard() {
+async function getLeaderboard(hardMode = false) {
+  const tableName = hardMode ? 'scores_hard' : 'scores';
   const connection = await mysql.createConnection(dbConfig);
   const [rows] = await connection.query(
-    'SELECT name, score FROM scores ORDER BY score DESC, created_at ASC'
+    `SELECT name, score FROM ${tableName} ORDER BY score DESC, created_at ASC`
   );
   await connection.end();
   return rows;
 }
 
 // Helper: upsert a score
-async function upsertScore(name, score) {
+async function upsertScore(name, score, hardMode = false) {
+  const tableName = hardMode ? 'scores_hard' : 'scores';
   const nameKey = name.toLowerCase();
   const connection = await mysql.createConnection(dbConfig);
 
   await connection.query(
-    `INSERT INTO scores (name, name_key, score)
+    `INSERT INTO ${tableName} (name, name_key, score)
      VALUES (?, ?, ?)
      ON DUPLICATE KEY UPDATE score = GREATEST(score, VALUES(score));`,
     [name, nameKey, score]
@@ -196,8 +210,9 @@ wss.on('connection', (ws) => {
         }
 
         // If we get here, the score is likely valid
-        await upsertScore(name, score);
-        console.log(`Score recorded: ${name} - ${score} (Lines: ${lines}, Time: ${elapsedSeconds.toFixed(1)}s)`);
+        const hardMode = data.hardMode === true;
+        await upsertScore(name, score, hardMode);
+        console.log(`Score recorded: ${name} - ${score} (Lines: ${lines}, Time: ${elapsedSeconds.toFixed(1)}s, Hard: ${hardMode})`);
 
         ws.send(JSON.stringify({
           success: true,
@@ -235,20 +250,28 @@ wss.on('connection', (ws) => {
 
 // Send leaderboard to a specific client
 async function sendLeaderboard(ws) {
-  const leaderboard = await getLeaderboard();
+  const leaderboard = await getLeaderboard(false);
+  const leaderboardHard = await getLeaderboard(true);
+  
   const names = leaderboard.map((entry) => entry.name);
   const scores = leaderboard.map((entry) => entry.score);
+  const namesHard = leaderboardHard.map((entry) => entry.name);
+  const scoresHard = leaderboardHard.map((entry) => entry.score);
 
-  ws.send(JSON.stringify({ names, scores }));
+  ws.send(JSON.stringify({ names, scores, namesHard, scoresHard }));
 }
 
 // Broadcast leaderboard to all connected clients
 async function broadcastLeaderboard() {
-  const leaderboard = await getLeaderboard();
+  const leaderboard = await getLeaderboard(false);
+  const leaderboardHard = await getLeaderboard(true);
+  
   const names = leaderboard.map((entry) => entry.name);
   const scores = leaderboard.map((entry) => entry.score);
+  const namesHard = leaderboardHard.map((entry) => entry.name);
+  const scoresHard = leaderboardHard.map((entry) => entry.score);
 
-  const message = JSON.stringify({ names, scores });
+  const message = JSON.stringify({ names, scores, namesHard, scoresHard });
 
   wss.clients.forEach((client) => {
     if (client.readyState === WebSocket.OPEN) {
