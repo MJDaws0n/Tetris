@@ -5,15 +5,7 @@ Play online by visiting
 https://tetris.mjdawson.net
 
 ## Play localy
-The backend of this code does NOT nativly pull the correct websocket server by default. This is as a certifcate is required and on the server the game is hosted on, an reverse proxy is used to host the game. If you wish to spin up your own version, you must edit the websocket connection manually in the file.
-
-This is because I couldn't be bothered to set it up to pull from the .env file as I am lazy.
-
-Edit the ./website/pubic/game.js file and change the url on this line to say what you wish for it to be
-```js
-this.wsUrl = 'wss://tetris-server.mjdawson.net:441';
-```
-If using localy, you should use ws:// not ws://, the server hosts only a WS image, and a reverse proxy must be used to set it up to use wss. Cloudflare should work, however I use my own implementation called [ProxyDNSCache](https://github.com/mjdaws0n/ProxyDNSCache) for both the website, and the websocket.
+You should use ws:// not ws://, the server hosts only a WS image, and a reverse proxy must be used to set it up to use wss. Cloudflare should work, however I use my own implementation called [ProxyDNSCache](https://github.com/mjdaws0n/ProxyDNSCache) for both the website, and the websocket.
 
 To run just clone files, make changes then run 
 ```sh
