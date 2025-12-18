@@ -1,43 +1,225 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
   <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tetris</title>
-    <link rel="stylesheet" href="/styles.css?=2.2.1">
+    <link rel="stylesheet" href="/styles.css?v=3.0.0">
   </head>
   <body>
     <div id="app" class="app">
       <header class="app-header">
-        <div class="app-title">Tetris by Max v2.1.1</div>
-        <div class="app-subtitle">Arrow keys to move • Space to drop</div>
+        <div class="app-title">Tetris by Max v3.0.0</div>
+        <div class="app-subtitle">Arrow keys to move • Space to drop • C to hold</div>
       </header>
       <div class="app-main">
         <div id="gameArea" class="game-area">
           <canvas id="gameCanvas">Your browser does not support the HTML5 canvas tag.</canvas>
-          <div id="nameModal" class="modal hidden">
-            <div class="modal-card">
-              <h2>Welcome</h2>
-              <p class="modal-text">Enter a name for the leaderboard.</p>
-              <input id="playerNameInput" type="text" placeholder="Your name" maxlength="20" />
-              <div class="modal-option">
-                <label>
-                  <input type="checkbox" id="ghostBlockToggle" checked>
-                  Enable Ghost Block
-                </label>
-              </div>
-              <div class="modal-option">
-                <label>
-                  <input type="checkbox" id="hardModeToggle">
-                  Hard Mode (Faster Start)
-                </label>
-              </div>
-              <div class="modal-actions">
-                <button id="startBtn">Start game</button>
+          
+          <!-- ============================================
+               MAIN MENU MODAL
+               ============================================ -->
+          <div id="mainMenuModal" class="modal">
+            <div class="modal-card menu-screen">
+              <div class="menu-logo">TETRIS</div>
+              <div class="menu-subtitle">Territory Wars Edition</div>
+              <div class="menu-buttons">
+                <button id="singlePlayerBtn" class="menu-btn primary">
+                  <span class="menu-btn-icon">🎮</span>
+                  Single Player
+                </button>
+                <button id="multiplayerBtn" class="menu-btn">
+                  <span class="menu-btn-icon">👥</span>
+                  Multiplayer
+                </button>
+                <button id="leaderboardBtn" class="menu-btn">
+                  <span class="menu-btn-icon">🏆</span>
+                  Leaderboard
+                </button>
               </div>
             </div>
           </div>
 
-          <!-- Full Leaderboard Modal -->
+          <!-- ============================================
+               SINGLE PLAYER NAME/SETTINGS MODAL
+               ============================================ -->
+          <div id="nameModal" class="modal hidden">
+            <div class="modal-card">
+              <button id="backToMenuFromSingle" class="back-btn">Back</button>
+              <h2>Single Player</h2>
+              <p class="modal-text">Enter your name and configure settings.</p>
+              <input id="playerNameInput" type="text" placeholder="Your name" maxlength="20" />
+              
+              <div class="modal-option">
+                <label>
+                  <div class="option-text">
+                    <span class="option-label">Ghost Block</span>
+                    <span class="option-description">Shows where piece will land</span>
+                  </div>
+                  <div class="toggle-switch">
+                    <input type="checkbox" id="ghostBlockToggle" checked>
+                    <span class="toggle-slider"></span>
+                  </div>
+                </label>
+              </div>
+              
+              <div class="modal-option">
+                <label>
+                  <div class="option-text">
+                    <span class="option-label">Hard Mode</span>
+                    <span class="option-description">Start at level 10</span>
+                  </div>
+                  <div class="toggle-switch">
+                    <input type="checkbox" id="hardModeToggle">
+                    <span class="toggle-slider"></span>
+                  </div>
+                </label>
+              </div>
+              
+              <div class="modal-actions">
+                <button id="startBtn">Start Game</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- ============================================
+               MULTIPLAYER MENU MODAL
+               ============================================ -->
+          <div id="multiplayerMenuModal" class="modal hidden">
+            <div class="modal-card">
+              <button id="backToMenuFromMulti" class="back-btn">Back</button>
+              <h2>Multiplayer</h2>
+              <p class="modal-text">Create a new room or join an existing one.</p>
+              
+              <div class="menu-buttons">
+                <button id="createRoomBtn" class="menu-btn primary">
+                  <span class="menu-btn-icon">➕</span>
+                  Create Room
+                </button>
+                <button id="joinRoomBtn" class="menu-btn">
+                  <span class="menu-btn-icon">🔗</span>
+                  Join Room
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- ============================================
+               CREATE ROOM MODAL
+               ============================================ -->
+          <div id="createRoomModal" class="modal hidden">
+            <div class="modal-card">
+              <button id="backToMultiFromCreate" class="back-btn">Back</button>
+              <h2>Create Room</h2>
+              <p class="modal-text">Enter your name to create a new room.</p>
+              
+              <input id="hostNameInput" type="text" placeholder="Your name" maxlength="20" />
+              
+              <div id="createRoomError" class="message error hidden"></div>
+              
+              <div class="modal-actions">
+                <button id="confirmCreateRoomBtn">Create Room</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- ============================================
+               JOIN ROOM MODAL
+               ============================================ -->
+          <div id="joinRoomModal" class="modal hidden">
+            <div class="modal-card">
+              <button id="backToMultiFromJoin" class="back-btn">Back</button>
+              <h2>Join Room</h2>
+              <p class="modal-text">Enter your name and the room code.</p>
+              
+              <input id="joinNameInput" type="text" placeholder="Your name" maxlength="20" />
+              <input id="roomCodeInput" type="text" placeholder="Room code" maxlength="6" style="text-transform: uppercase; font-family: 'SF Mono', monospace; letter-spacing: 0.1em;" />
+              
+              <div id="joinRoomError" class="message error hidden"></div>
+              
+              <div class="modal-actions">
+                <button id="confirmJoinRoomBtn">Join Room</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- ============================================
+               ROOM LOBBY MODAL
+               ============================================ -->
+          <div id="roomLobbyModal" class="modal hidden">
+            <div class="modal-card" style="width: 420px;">
+              <button id="leaveRoomBtn" class="back-btn">Leave Room</button>
+              <h2>Room Lobby</h2>
+              
+              <div class="room-code-display">
+                <div class="room-code-label">Room Code</div>
+                <div id="lobbyRoomCode" class="room-code">------</div>
+                <div class="room-code-hint">Share this code with friends</div>
+              </div>
+              
+              <div class="player-list">
+                <div class="player-list-header">
+                  Players (<span id="playerCount">0</span>/8)
+                </div>
+                <div id="playerListContainer"></div>
+              </div>
+
+              <!-- Host-only options -->
+              <div id="hostOptions">
+                <div class="modal-option">
+                  <label>
+                    <div class="option-text">
+                      <span class="option-label">Hard Mode</span>
+                      <span class="option-description">Start at level 10 for all players</span>
+                    </div>
+                    <div class="toggle-switch">
+                      <input type="checkbox" id="lobbyHardModeToggle">
+                      <span class="toggle-slider"></span>
+                    </div>
+                  </label>
+                </div>
+                
+                <div class="modal-actions">
+                  <button id="startMultiplayerBtn" disabled>
+                    <span class="waiting-dots">Waiting for players</span>
+                  </button>
+                </div>
+              </div>
+              
+              <!-- Non-host waiting message -->
+              <div id="waitingForHost" class="hidden" style="text-align: center; padding: 16px; color: var(--text-secondary);">
+                <span class="waiting-dots">Waiting for host to start</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- ============================================
+               MULTIPLAYER GAME RESULTS MODAL
+               ============================================ -->
+          <div id="resultsModal" class="modal hidden">
+            <div class="modal-card results-screen" style="width: 480px;">
+              <div class="results-title">🏆 Game Over!</div>
+              
+              <div id="winnerAnnouncement" style="margin-bottom: 24px; font-size: 18px; color: var(--text-primary);"></div>
+              
+              <div class="podium" id="podiumContainer">
+                <!-- Podium places will be dynamically inserted -->
+              </div>
+              
+              <div id="rankingsList" class="rankings-list">
+                <!-- Full rankings will be dynamically inserted -->
+              </div>
+              
+              <div class="modal-actions">
+                <button id="playAgainBtn" class="btn-secondary">Play Again</button>
+                <button id="backToMenuBtn">Back to Menu</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- ============================================
+               FULL LEADERBOARD MODAL
+               ============================================ -->
           <div id="fullLeaderboardModal" class="modal hidden">
             <div class="modal-card modal-card-large">
               <div class="modal-header">
@@ -67,23 +249,30 @@
 
           <div id="scorePopups" class="score-popups"></div>
         </div>
+
+        <!-- ============================================
+             SIDEBAR (Single Player Mode)
+             ============================================ -->
         <aside id="sidebar" class="sidebar">
           <div class="sidebar-card sidebar-current">
-            <div class="sidebar-card-title">Current run</div>
+            <div class="sidebar-card-title">Current Run</div>
             <div class="current-stat"><span>Player</span><strong id="statPlayer">—</strong></div>
             <div class="current-stat"><span>Score</span><strong id="statScore">0</strong></div>
             <div class="current-stat"><span>Level</span><strong id="statLevel">1</strong></div>
             <div class="current-stat"><span>Lines</span><strong id="statLines">0</strong></div>
             <div class="current-stat current-timer"><span>Time</span><strong id="statTime">00:00</strong></div>
           </div>
+          
           <div class="sidebar-card sidebar-next">
-            <div class="sidebar-card-title">Next piece</div>
+            <div class="sidebar-card-title">Next Piece</div>
             <div id="nextPiecePreview" class="next-piece-preview"></div>
           </div>
+          
           <div class="sidebar-card sidebar-hold">
             <div class="sidebar-card-title">Hold (C)</div>
             <div id="holdPiecePreview" class="next-piece-preview"></div>
           </div>
+          
           <div class="sidebar-card sidebar-leaderboard" data-mode="normal">
             <div class="sidebar-card-title">Leaderboard (Normal)</div>
             <table id="leaderboardTable">
@@ -93,6 +282,7 @@
               <tbody></tbody>
             </table>
           </div>
+          
           <div class="sidebar-card sidebar-leaderboard" data-mode="hard">
             <div class="sidebar-card-title">Leaderboard (Hard)</div>
             <table id="leaderboardTableHard">
@@ -103,8 +293,45 @@
             </table>
           </div>
         </aside>
+
+        <!-- ============================================
+             SIDEBAR (Multiplayer Mode) - Initially Hidden
+             ============================================ -->
+        <aside id="multiplayerSidebar" class="sidebar hidden">
+          <div class="sidebar-card sidebar-current">
+            <div class="sidebar-card-title">Your Stats</div>
+            <div class="current-stat"><span>Player</span><strong id="mpStatPlayer">—</strong></div>
+            <div class="current-stat"><span>Score</span><strong id="mpStatScore">0</strong></div>
+            <div class="current-stat"><span>Level</span><strong id="mpStatLevel">1</strong></div>
+            <div class="current-stat"><span>Lines</span><strong id="mpStatLines">0</strong></div>
+            <div class="current-stat"><span>Tiles</span><strong id="mpStatTiles">0</strong></div>
+          </div>
+          
+          <div class="sidebar-card sidebar-next">
+            <div class="sidebar-card-title">Next Piece</div>
+            <div id="mpNextPiecePreview" class="next-piece-preview"></div>
+          </div>
+          
+          <div class="sidebar-card sidebar-hold">
+            <div class="sidebar-card-title">Hold (C)</div>
+            <div id="mpHoldPiecePreview" class="next-piece-preview"></div>
+          </div>
+          
+          <!-- Capture Grid -->
+          <div class="sidebar-card capture-grid-container">
+            <div class="capture-grid-title">Territory Wars</div>
+            <div id="captureGrid" class="capture-grid">
+              <!-- 10x10 grid cells will be generated by JS -->
+            </div>
+          </div>
+          
+          <!-- Opponents List -->
+          <div id="opponentsContainer" class="multiplayer-sidebar">
+            <!-- Opponent previews will be dynamically inserted -->
+          </div>
+        </aside>
       </div>
     </div>
-    <script src="/js/game.js?=2.2.1"></script>
+    <script src="/js/game.js?v=3.0.0"></script>
   </body>
 </html>

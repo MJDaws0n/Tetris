@@ -7,327 +7,1060 @@ const crypto = require('crypto');
 const app = express();
 const port = 3000;
 
-// In-memory session store for anti-cheat validation
-// Map<sessionId, { startTime: number }>
-const sessions = new Map();
+// ============================================
+// DATA STRUCTURES
+// ============================================
 
-// Cleanup old sessions every hour
-setInterval(() => {
-  const now = Date.now();
-  for (const [id, session] of sessions.entries()) {
-    if (now - session.startTime > 24 * 60 * 60 * 1000) { // 24 hours
-      sessions.delete(id);
+// In-memory session store for anti-cheat validation (single player)
+const sessions = new Map(); // sessionId -> { startTime }
+
+// Multiplayer room management
+const rooms = new Map(); // roomCode -> Room
+
+// Player -> Room mapping for quick lookup
+const playerRooms = new Map(); // WebSocket -> roomCode
+
+// Player colors for capture grid
+const PLAYER_COLORS = [
+    '#0a84ff', // Blue
+    '#ff453a', // Red
+    '#30d158', // Green
+    '#bf5af2', // Purple
+    '#ff9f0a', // Orange
+    '#64d2ff', // Cyan
+    '#ffd60a', // Yellow
+    '#ff6b6b', // Coral
+];
+
+// Room class
+class Room {
+    constructor(code, host, hostName) {
+        this.code = code;
+        this.host = host; // WebSocket of host
+        this.hostName = hostName;
+        this.players = new Map(); // WebSocket -> PlayerInfo
+        this.state = 'lobby'; // 'lobby' | 'playing' | 'finished'
+        this.hardMode = false;
+        this.captureGrid = this.createCaptureGrid();
+        this.winner = null;
+        this.rankings = [];
+        this.createdAt = Date.now();
+        
+        // Add host as first player
+        this.addPlayer(host, hostName);
     }
-  }
+    
+    createCaptureGrid() {
+        // 10x10 grid, 0 = empty, playerId (1-8) = captured
+        return Array.from({ length: 10 }, () => Array(10).fill(0));
+    }
+    
+    addPlayer(ws, name) {
+        const playerId = this.players.size + 1;
+        const color = PLAYER_COLORS[(playerId - 1) % PLAYER_COLORS.length];
+        
+        this.players.set(ws, {
+            id: playerId,
+            name: name,
+            color: color,
+            score: 0,
+            lines: 0,
+            tilesOwned: 0,
+            eliminated: false,
+            lastClearSize: 0, // Track last line clear for territory battles
+        });
+        
+        return playerId;
+    }
+    
+    removePlayer(ws) {
+        const player = this.players.get(ws);
+        if (player) {
+            this.players.delete(ws);
+            // If host left and game is in lobby, assign new host
+            if (ws === this.host && this.state === 'lobby' && this.players.size > 0) {
+                const newHost = this.players.keys().next().value;
+                this.host = newHost;
+                return { newHost: newHost, player: player };
+            }
+        }
+        return { player: player };
+    }
+    
+    getPlayerList() {
+        const list = [];
+        for (const [ws, info] of this.players) {
+            list.push({
+                id: info.id,
+                name: info.name,
+                color: info.color,
+                isHost: ws === this.host,
+                eliminated: info.eliminated,
+                score: info.score,
+                tilesOwned: info.tilesOwned,
+            });
+        }
+        return list;
+    }
+    
+    isNameTaken(name, excludeWs = null) {
+        const normalizedName = name.toLowerCase().trim();
+        for (const [ws, info] of this.players) {
+            if (ws !== excludeWs && info.name.toLowerCase() === normalizedName) {
+                return true;
+            }
+        }
+        return false;
+    }
+    
+    // Count tiles owned by each player
+    countTiles() {
+        const counts = {};
+        for (let y = 0; y < 10; y++) {
+            for (let x = 0; x < 10; x++) {
+                const owner = this.captureGrid[y][x];
+                if (owner > 0) {
+                    counts[owner] = (counts[owner] || 0) + 1;
+                }
+            }
+        }
+        return counts;
+    }
+    
+    // Check for win condition: connected path from one side to the other
+    checkWin() {
+        const tileCounts = this.countTiles();
+        
+        for (const [ws, player] of this.players) {
+            if (player.eliminated) continue;
+            
+            const playerId = player.id;
+            
+            // Check left-to-right path
+            if (this.hasPath(playerId, 'horizontal')) {
+                return player;
+            }
+            
+            // Check top-to-bottom path
+            if (this.hasPath(playerId, 'vertical')) {
+                return player;
+            }
+        }
+        
+        return null;
+    }
+    
+    // BFS to find if player has a connected path across the grid
+    hasPath(playerId, direction) {
+        const visited = new Set();
+        const queue = [];
+        
+        // Start from left column (horizontal) or top row (vertical)
+        if (direction === 'horizontal') {
+            for (let y = 0; y < 10; y++) {
+                if (this.captureGrid[y][0] === playerId) {
+                    queue.push({ x: 0, y });
+                    visited.add(`0,${y}`);
+                }
+            }
+        } else {
+            for (let x = 0; x < 10; x++) {
+                if (this.captureGrid[0][x] === playerId) {
+                    queue.push({ x, y: 0 });
+                    visited.add(`${x},0`);
+                }
+            }
+        }
+        
+        while (queue.length > 0) {
+            const { x, y } = queue.shift();
+            
+            // Check if reached the other side
+            if (direction === 'horizontal' && x === 9) return true;
+            if (direction === 'vertical' && y === 9) return true;
+            
+            // Check neighbors (4-directional)
+            const neighbors = [
+                { x: x - 1, y },
+                { x: x + 1, y },
+                { x, y: y - 1 },
+                { x, y: y + 1 },
+            ];
+            
+            for (const n of neighbors) {
+                const key = `${n.x},${n.y}`;
+                if (n.x >= 0 && n.x < 10 && n.y >= 0 && n.y < 10 &&
+                    !visited.has(key) && this.captureGrid[n.y][n.x] === playerId) {
+                    visited.add(key);
+                    queue.push(n);
+                }
+            }
+        }
+        
+        return false;
+    }
+    
+    // Capture tiles when a player clears lines
+    captureTiles(playerId, linesCleared) {
+        if (linesCleared <= 0) return [];
+        
+        const player = [...this.players.values()].find(p => p.id === playerId);
+        if (!player) return [];
+        
+        player.lastClearSize = linesCleared;
+        
+        const captured = [];
+        let remaining = linesCleared;
+        
+        // Strategy: Try to capture tiles adjacent to existing territory first
+        // Then capture empty tiles, then potentially steal opponent tiles
+        
+        // Find all cells owned by this player
+        const ownedCells = [];
+        for (let y = 0; y < 10; y++) {
+            for (let x = 0; x < 10; x++) {
+                if (this.captureGrid[y][x] === playerId) {
+                    ownedCells.push({ x, y });
+                }
+            }
+        }
+        
+        // Find empty adjacent cells first
+        const adjacentEmpty = new Set();
+        const adjacentOpponent = [];
+        
+        for (const cell of ownedCells) {
+            const neighbors = [
+                { x: cell.x - 1, y: cell.y },
+                { x: cell.x + 1, y: cell.y },
+                { x: cell.x, y: cell.y - 1 },
+                { x: cell.x, y: cell.y + 1 },
+            ];
+            
+            for (const n of neighbors) {
+                if (n.x >= 0 && n.x < 10 && n.y >= 0 && n.y < 10) {
+                    const current = this.captureGrid[n.y][n.x];
+                    if (current === 0) {
+                        adjacentEmpty.add(`${n.x},${n.y}`);
+                    } else if (current !== playerId) {
+                        adjacentOpponent.push({ x: n.x, y: n.y, owner: current });
+                    }
+                }
+            }
+        }
+        
+        // Capture adjacent empty cells
+        for (const key of adjacentEmpty) {
+            if (remaining <= 0) break;
+            const [x, y] = key.split(',').map(Number);
+            this.captureGrid[y][x] = playerId;
+            captured.push({ x, y });
+            remaining--;
+        }
+        
+        // If player has no territory yet, place randomly in middle area
+        if (ownedCells.length === 0 && remaining > 0) {
+            const emptyCells = [];
+            for (let y = 2; y < 8; y++) {
+                for (let x = 2; x < 8; x++) {
+                    if (this.captureGrid[y][x] === 0) {
+                        emptyCells.push({ x, y });
+                    }
+                }
+            }
+            
+            // Shuffle and take
+            for (let i = emptyCells.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [emptyCells[i], emptyCells[j]] = [emptyCells[j], emptyCells[i]];
+            }
+            
+            for (const cell of emptyCells) {
+                if (remaining <= 0) break;
+                this.captureGrid[cell.y][cell.x] = playerId;
+                captured.push(cell);
+                remaining--;
+            }
+        }
+        
+        // Try to capture any remaining empty cells on the board
+        if (remaining > 0) {
+            for (let y = 0; y < 10 && remaining > 0; y++) {
+                for (let x = 0; x < 10 && remaining > 0; x++) {
+                    if (this.captureGrid[y][x] === 0) {
+                        this.captureGrid[y][x] = playerId;
+                        captured.push({ x, y });
+                        remaining--;
+                    }
+                }
+            }
+        }
+        
+        // If still remaining and clear was big (3+), try to steal from opponents
+        if (remaining > 0 && linesCleared >= 3) {
+            // Sort opponent cells by owner's last clear size (steal from weaker players)
+            adjacentOpponent.sort((a, b) => {
+                const ownerA = [...this.players.values()].find(p => p.id === a.owner);
+                const ownerB = [...this.players.values()].find(p => p.id === b.owner);
+                return (ownerA?.lastClearSize || 0) - (ownerB?.lastClearSize || 0);
+            });
+            
+            for (const cell of adjacentOpponent) {
+                if (remaining <= 0) break;
+                const owner = [...this.players.values()].find(p => p.id === cell.owner);
+                // Can steal if our clear is bigger than their last clear
+                if (!owner || linesCleared > owner.lastClearSize) {
+                    this.captureGrid[cell.y][cell.x] = playerId;
+                    captured.push({ x: cell.x, y: cell.y, stolen: true, from: cell.owner });
+                    remaining--;
+                }
+            }
+        }
+        
+        // Update tile counts for all players
+        const counts = this.countTiles();
+        for (const [ws, p] of this.players) {
+            p.tilesOwned = counts[p.id] || 0;
+        }
+        
+        return captured;
+    }
+    
+    // Calculate final rankings
+    calculateRankings() {
+        const rankings = [];
+        
+        for (const [ws, player] of this.players) {
+            rankings.push({
+                id: player.id,
+                name: player.name,
+                color: player.color,
+                score: player.score,
+                lines: player.lines,
+                tilesOwned: player.tilesOwned,
+                eliminated: player.eliminated,
+            });
+        }
+        
+        // Sort by: winner first, then tiles owned, then score
+        rankings.sort((a, b) => {
+            if (this.winner && a.name === this.winner.name) return -1;
+            if (this.winner && b.name === this.winner.name) return 1;
+            if (a.eliminated !== b.eliminated) return a.eliminated ? 1 : -1;
+            if (a.tilesOwned !== b.tilesOwned) return b.tilesOwned - a.tilesOwned;
+            return b.score - a.score;
+        });
+        
+        this.rankings = rankings;
+        return rankings;
+    }
+}
+
+// Generate unique room code
+function generateRoomCode() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Removed confusing chars
+    let code;
+    do {
+        code = '';
+        for (let i = 0; i < 6; i++) {
+            code += chars[Math.floor(Math.random() * chars.length)];
+        }
+    } while (rooms.has(code));
+    return code;
+}
+
+// Cleanup old sessions and rooms
+setInterval(() => {
+    const now = Date.now();
+    
+    // Clean sessions older than 24 hours
+    for (const [id, session] of sessions.entries()) {
+        if (now - session.startTime > 24 * 60 * 60 * 1000) {
+            sessions.delete(id);
+        }
+    }
+    
+    // Clean rooms older than 2 hours with no players
+    for (const [code, room] of rooms.entries()) {
+        if (room.players.size === 0 && now - room.createdAt > 2 * 60 * 60 * 1000) {
+            rooms.delete(code);
+        }
+    }
 }, 60 * 60 * 1000);
 
-// Database connection configuration
+// ============================================
+// DATABASE CONFIGURATION
+// ============================================
+
 const dbConfig = {
-  host: process.env.DB_HOST || 'mysql',
-  user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || 'secret',
-  database: process.env.DB_NAME || process.env.MYSQL_DATABASE || 'testdb'
+    host: process.env.DB_HOST || 'mysql',
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD || 'secret',
+    database: process.env.DB_NAME || process.env.MYSQL_DATABASE || 'testdb'
 };
 
-// Create HTTP server so Express and WebSocket can share the same port
 const server = http.createServer(app);
-
-// Initialize WebSocket server on the same HTTP server
 const wss = new WebSocket.Server({ server });
 
-// Ensure database, table, and schema are ready
+// ============================================
+// DATABASE FUNCTIONS
+// ============================================
+
 async function initDatabase() {
-  const connection = await mysql.createConnection({
-    host: dbConfig.host,
-    user: dbConfig.user,
-    password: dbConfig.password
-  });
+    const connection = await mysql.createConnection({
+        host: dbConfig.host,
+        user: dbConfig.user,
+        password: dbConfig.password
+    });
 
-  // Create database if it doesn't exist
-  await connection.query(
-    `CREATE DATABASE IF NOT EXISTS \`${dbConfig.database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`
-  );
-  await connection.end();
-
-  const dbConnection = await mysql.createConnection(dbConfig);
-
-  // Create scores table if it doesn't exist (normal mode)
-  await dbConnection.query(`
-    CREATE TABLE IF NOT EXISTS scores (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      name VARCHAR(255) NOT NULL,
-      name_key VARCHAR(255) NOT NULL,
-      score INT NOT NULL,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE KEY unique_name_key (name_key)
-    ) ENGINE=InnoDB;
-  `);
-
-  // Create scores_hard table for hard mode leaderboard
-  await dbConnection.query(`
-    CREATE TABLE IF NOT EXISTS scores_hard (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      name VARCHAR(255) NOT NULL,
-      name_key VARCHAR(255) NOT NULL,
-      score INT NOT NULL,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE KEY unique_name_key (name_key)
-    ) ENGINE=InnoDB;
-  `);
-
-  await dbConnection.end();
-}
-
-// Helper: get leaderboard from DB
-async function getLeaderboard(hardMode = false) {
-  const tableName = hardMode ? 'scores_hard' : 'scores';
-  const connection = await mysql.createConnection(dbConfig);
-  const [rows] = await connection.query(
-    `SELECT name, score FROM ${tableName} ORDER BY score DESC, created_at ASC`
-  );
-  await connection.end();
-  return rows;
-}
-
-// Helper: upsert a score
-async function upsertScore(name, score, hardMode = false) {
-  const tableName = hardMode ? 'scores_hard' : 'scores';
-  const nameKey = name.toLowerCase();
-  const connection = await mysql.createConnection(dbConfig);
-
-  await connection.query(
-    `INSERT INTO ${tableName} (name, name_key, score)
-     VALUES (?, ?, ?)
-     ON DUPLICATE KEY UPDATE score = GREATEST(score, VALUES(score));`,
-    [name, nameKey, score]
-  );
-
-  await connection.end();
-}
-
-// WebSocket connection handling (based on old.js logic)
-wss.on('connection', (ws) => {
-  console.log('New client connected');
-
-  ws.on('message', async (message) => {
-    try {
-      const data = JSON.parse(message);
-
-      // Handle session start
-      if (data.type === 'start_game') {
-        const sessionId = crypto.randomUUID();
-        sessions.set(sessionId, {
-          startTime: Date.now()
-        });
-        ws.send(JSON.stringify({ type: 'session_started', sessionId }));
-        return;
-      }
-
-      // Handle leaderboard sync request
-      if (data.type === 'sync') {
-        await sendLeaderboard(ws);
-        return;
-      }
-
-      // Handle score submission
-      // Support both old format (for backward compat if needed, though we are tightening security)
-      // and new format with sessionId.
-      // For this request, we will ENFORCE sessionId for security.
-      
-      if (data.type === 'submit_score' || (data.name && data.score !== undefined)) {
-        
-        // 1. Validate Payload Structure
-        if (!data.name || data.score === undefined) {
-           ws.send(JSON.stringify({ error: 'Invalid message format' }));
-           return;
-        }
-
-        // 2. Validate Session (Anti-Cheat)
-        if (!data.sessionId) {
-           ws.send(JSON.stringify({ error: 'Security violation: Missing session ID' }));
-           return;
-        }
-
-        const session = sessions.get(data.sessionId);
-        if (!session) {
-           ws.send(JSON.stringify({ error: 'Security violation: Invalid or expired session' }));
-           return;
-        }
-
-        const name = data.name.replace(/\s+/g, '');
-        const score = Number(data.score);
-        const lines = Number(data.lines || 0); // Default to 0 if missing, but we should send it
-
-        if (!name) {
-          ws.send(JSON.stringify({ error: 'Name cannot be empty' }));
-          return;
-        }
-
-        if (!Number.isFinite(score) || score <= 0) {
-           // It's possible to have 0 score, but usually we only submit positive scores.
-           // If score is 0, we can just ignore it or accept it.
-           if (score === 0) return; 
-           ws.send(JSON.stringify({ error: 'Invalid score' }));
-           return;
-        }
-
-        // 3. Feasibility Checks
-        const now = Date.now();
-        const elapsedSeconds = (now - session.startTime) / 1000;
-
-        // Check A: Time Travel (Score received before game could reasonably start)
-        if (elapsedSeconds < 0.1) {
-           ws.send(JSON.stringify({ error: 'Too fast' }));
-           return;
-        }
-
-        // Check B: Line Clear Rate
-        // World record pace is ~3-4 lines/sec. We allow 10 lines/sec as a safe upper bound.
-        // We add a small buffer (20 lines) for initial burst or lag.
-        const maxPossibleLines = 20 + (elapsedSeconds * 10);
-        if (lines > maxPossibleLines) {
-           console.warn(`Rejected score: Impossible line rate. Lines: ${lines}, Elapsed: ${elapsedSeconds}`);
-           ws.send(JSON.stringify({ error: 'Score rejected: Impossible gameplay detected' }));
-           return;
-        }
-
-        // Check C: Score vs Lines
-        // Formula: score += 100 * lines * lines
-        // Max points per line is 400 (for a 4-line clear).
-        // So score <= lines * 400.
-        // We allow a small margin for potential future scoring changes or lag, but 400 is the hard math limit.
-        // If lines is 0, score MUST be 0.
-        if (lines === 0 && score > 0) {
-           console.warn(`Rejected score: Score > 0 with 0 lines.`);
-           ws.send(JSON.stringify({ error: 'Score rejected: Score mismatch' }));
-           return;
-        }
-
-        if (score > lines * 400) {
-           console.warn(`Rejected score: Score too high for lines. Score: ${score}, Lines: ${lines}`);
-           ws.send(JSON.stringify({ error: 'Score rejected: Score mismatch' }));
-           return;
-        }
-
-        // If we get here, the score is likely valid
-        const hardMode = data.hardMode === true;
-        await upsertScore(name, score, hardMode);
-        console.log(`Score recorded: ${name} - ${score} (Lines: ${lines}, Time: ${elapsedSeconds.toFixed(1)}s, Hard: ${hardMode})`);
-
-        ws.send(JSON.stringify({
-          success: true,
-          message: `Score for ${name} recorded: ${score}`
-        }));
-
-        await broadcastLeaderboard();
-        return;
-      }
-      
-      // Unknown message type
-      ws.send(JSON.stringify({ error: 'Unknown message type' }));
-
-    } catch (error) {
-      console.error('Error processing message:', error);
-      ws.send(JSON.stringify({
-        error: 'Invalid JSON format or database error'
-      }));
-    }
-  });
-
-  ws.on('close', () => {
-    console.log('Client disconnected');
-  });
-
-  ws.on('error', (error) => {
-    console.error('WebSocket error:', error);
-  });
-
-  // Send current leaderboard to newly connected client
-  sendLeaderboard(ws).catch((err) => {
-    console.error('Error sending initial leaderboard:', err);
-  });
-});
-
-// Send leaderboard to a specific client
-async function sendLeaderboard(ws) {
-  const leaderboard = await getLeaderboard(false);
-  const leaderboardHard = await getLeaderboard(true);
-  
-  const names = leaderboard.map((entry) => entry.name);
-  const scores = leaderboard.map((entry) => entry.score);
-  const namesHard = leaderboardHard.map((entry) => entry.name);
-  const scoresHard = leaderboardHard.map((entry) => entry.score);
-
-  ws.send(JSON.stringify({ names, scores, namesHard, scoresHard }));
-}
-
-// Broadcast leaderboard to all connected clients
-async function broadcastLeaderboard() {
-  const leaderboard = await getLeaderboard(false);
-  const leaderboardHard = await getLeaderboard(true);
-  
-  const names = leaderboard.map((entry) => entry.name);
-  const scores = leaderboard.map((entry) => entry.score);
-  const namesHard = leaderboardHard.map((entry) => entry.name);
-  const scoresHard = leaderboardHard.map((entry) => entry.score);
-
-  const message = JSON.stringify({ names, scores, namesHard, scoresHard });
-
-  wss.clients.forEach((client) => {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(message);
-    }
-  });
-}
-
-// Basic HTTP route to verify server is running
-app.get('/', (req, res) => {
-  res.send('Score server is running. Connect via WebSocket to submit scores.');
-});
-
-// Health check route for DB
-app.get('/db-check', async (req, res) => {
-  try {
-    const connection = await mysql.createConnection(dbConfig);
-    await connection.ping();
+    await connection.query(
+        `CREATE DATABASE IF NOT EXISTS \`${dbConfig.database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`
+    );
     await connection.end();
-    res.send('Successfully connected to MySQL database!');
-  } catch (err) {
-    res.status(500).send('Database connection failed: ' + err.stack);
-  }
+
+    const dbConnection = await mysql.createConnection(dbConfig);
+
+    await dbConnection.query(`
+        CREATE TABLE IF NOT EXISTS scores (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(255) NOT NULL,
+            name_key VARCHAR(255) NOT NULL,
+            score INT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY unique_name_key (name_key)
+        ) ENGINE=InnoDB;
+    `);
+
+    await dbConnection.query(`
+        CREATE TABLE IF NOT EXISTS scores_hard (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(255) NOT NULL,
+            name_key VARCHAR(255) NOT NULL,
+            score INT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY unique_name_key (name_key)
+        ) ENGINE=InnoDB;
+    `);
+
+    await dbConnection.end();
+}
+
+async function getLeaderboard(hardMode = false) {
+    const tableName = hardMode ? 'scores_hard' : 'scores';
+    const connection = await mysql.createConnection(dbConfig);
+    const [rows] = await connection.query(
+        `SELECT name, score FROM ${tableName} ORDER BY score DESC, created_at ASC`
+    );
+    await connection.end();
+    return rows;
+}
+
+async function upsertScore(name, score, hardMode = false) {
+    const tableName = hardMode ? 'scores_hard' : 'scores';
+    const nameKey = name.toLowerCase();
+    const connection = await mysql.createConnection(dbConfig);
+
+    await connection.query(
+        `INSERT INTO ${tableName} (name, name_key, score)
+         VALUES (?, ?, ?)
+         ON DUPLICATE KEY UPDATE score = GREATEST(score, VALUES(score));`,
+        [name, nameKey, score]
+    );
+
+    await connection.end();
+}
+
+// ============================================
+// WEBSOCKET HANDLING
+// ============================================
+
+wss.on('connection', (ws) => {
+    console.log('New client connected');
+
+    ws.on('message', async (message) => {
+        try {
+            const data = JSON.parse(message);
+            
+            // Route message to appropriate handler
+            switch (data.type) {
+                // Single player
+                case 'start_game':
+                    handleStartGame(ws);
+                    break;
+                case 'sync':
+                    await sendLeaderboard(ws);
+                    break;
+                case 'submit_score':
+                    await handleSubmitScore(ws, data);
+                    break;
+                    
+                // Multiplayer
+                case 'create_room':
+                    handleCreateRoom(ws, data);
+                    break;
+                case 'join_room':
+                    handleJoinRoom(ws, data);
+                    break;
+                case 'leave_room':
+                    handleLeaveRoom(ws);
+                    break;
+                case 'start_multiplayer':
+                    handleStartMultiplayer(ws, data);
+                    break;
+                case 'line_clear':
+                    await handleLineClear(ws, data);
+                    break;
+                case 'player_eliminated':
+                    handlePlayerEliminated(ws, data);
+                    break;
+                case 'update_score':
+                    handleUpdateScore(ws, data);
+                    break;
+                    
+                default:
+                    // Legacy support for old format
+                    if (data.name && data.score !== undefined) {
+                        await handleSubmitScore(ws, data);
+                    } else {
+                        ws.send(JSON.stringify({ error: 'Unknown message type' }));
+                    }
+            }
+        } catch (error) {
+            console.error('Error processing message:', error);
+            ws.send(JSON.stringify({ error: 'Invalid JSON format or server error' }));
+        }
+    });
+
+    ws.on('close', () => {
+        console.log('Client disconnected');
+        handleLeaveRoom(ws);
+    });
+
+    ws.on('error', (error) => {
+        console.error('WebSocket error:', error);
+    });
+
+    // Send initial leaderboard
+    sendLeaderboard(ws).catch((err) => {
+        console.error('Error sending initial leaderboard:', err);
+    });
 });
 
-// Initialize database, then start server
-// Retry logic for database connection
-async function startServer() {
-  let retries = 10;
-  while (retries > 0) {
-    try {
-      await initDatabase();
-      server.listen(port, () => {
-        console.log(`HTTP/WebSocket server listening on port ${port}`);
-      });
-      return;
-    } catch (err) {
-      console.error(`Failed to initialize database (retries left: ${retries}):`, err.message);
-      retries--;
-      await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds before retrying
+// ============================================
+// SINGLE PLAYER HANDLERS
+// ============================================
+
+function handleStartGame(ws) {
+    const sessionId = crypto.randomUUID();
+    sessions.set(sessionId, { startTime: Date.now() });
+    ws.send(JSON.stringify({ type: 'session_started', sessionId }));
+}
+
+async function handleSubmitScore(ws, data) {
+    if (!data.name || data.score === undefined) {
+        ws.send(JSON.stringify({ error: 'Invalid message format' }));
+        return;
     }
-  }
-  console.error('Could not connect to database after multiple attempts. Exiting.');
-  process.exit(1);
+
+    // Validate session for anti-cheat
+    if (!data.sessionId) {
+        ws.send(JSON.stringify({ error: 'Security violation: Missing session ID' }));
+        return;
+    }
+
+    const session = sessions.get(data.sessionId);
+    if (!session) {
+        ws.send(JSON.stringify({ error: 'Security violation: Invalid or expired session' }));
+        return;
+    }
+
+    const name = data.name.replace(/\s+/g, '');
+    const score = Number(data.score);
+    const lines = Number(data.lines || 0);
+
+    if (!name) {
+        ws.send(JSON.stringify({ error: 'Name cannot be empty' }));
+        return;
+    }
+
+    if (!Number.isFinite(score) || score < 0) {
+        if (score === 0) return;
+        ws.send(JSON.stringify({ error: 'Invalid score' }));
+        return;
+    }
+
+    // Feasibility checks
+    const now = Date.now();
+    const elapsedSeconds = (now - session.startTime) / 1000;
+
+    if (elapsedSeconds < 0.1) {
+        ws.send(JSON.stringify({ error: 'Too fast' }));
+        return;
+    }
+
+    const maxPossibleLines = 20 + (elapsedSeconds * 10);
+    if (lines > maxPossibleLines) {
+        console.warn(`Rejected score: Impossible line rate. Lines: ${lines}, Elapsed: ${elapsedSeconds}`);
+        ws.send(JSON.stringify({ error: 'Score rejected: Impossible gameplay detected' }));
+        return;
+    }
+
+    if (lines === 0 && score > 0) {
+        console.warn(`Rejected score: Score > 0 with 0 lines.`);
+        ws.send(JSON.stringify({ error: 'Score rejected: Score mismatch' }));
+        return;
+    }
+
+    if (score > lines * 400) {
+        console.warn(`Rejected score: Score too high for lines. Score: ${score}, Lines: ${lines}`);
+        ws.send(JSON.stringify({ error: 'Score rejected: Score mismatch' }));
+        return;
+    }
+
+    const hardMode = data.hardMode === true;
+    await upsertScore(name, score, hardMode);
+    console.log(`Score recorded: ${name} - ${score} (Lines: ${lines}, Time: ${elapsedSeconds.toFixed(1)}s, Hard: ${hardMode})`);
+
+    ws.send(JSON.stringify({
+        success: true,
+        message: `Score for ${name} recorded: ${score}`
+    }));
+
+    await broadcastLeaderboard();
+}
+
+// ============================================
+// MULTIPLAYER HANDLERS
+// ============================================
+
+function handleCreateRoom(ws, data) {
+    const name = (data.name || '').trim().replace(/\s+/g, '');
+    
+    if (!name) {
+        ws.send(JSON.stringify({ type: 'error', message: 'Name is required' }));
+        return;
+    }
+    
+    if (name.length > 20) {
+        ws.send(JSON.stringify({ type: 'error', message: 'Name too long (max 20 characters)' }));
+        return;
+    }
+    
+    // Leave any existing room
+    handleLeaveRoom(ws);
+    
+    const code = generateRoomCode();
+    const room = new Room(code, ws, name);
+    rooms.set(code, room);
+    playerRooms.set(ws, code);
+    
+    ws.send(JSON.stringify({
+        type: 'room_created',
+        roomCode: code,
+        playerId: 1,
+        isHost: true,
+        players: room.getPlayerList(),
+    }));
+    
+    console.log(`Room ${code} created by ${name}`);
+}
+
+function handleJoinRoom(ws, data) {
+    const name = (data.name || '').trim().replace(/\s+/g, '');
+    const code = (data.roomCode || '').toUpperCase().trim();
+    
+    if (!name) {
+        ws.send(JSON.stringify({ type: 'error', message: 'Name is required' }));
+        return;
+    }
+    
+    if (!code) {
+        ws.send(JSON.stringify({ type: 'error', message: 'Room code is required' }));
+        return;
+    }
+    
+    const room = rooms.get(code);
+    
+    if (!room) {
+        ws.send(JSON.stringify({ type: 'error', message: 'Room not found' }));
+        return;
+    }
+    
+    if (room.state !== 'lobby') {
+        ws.send(JSON.stringify({ type: 'error', message: 'Game already in progress' }));
+        return;
+    }
+    
+    if (room.players.size >= 8) {
+        ws.send(JSON.stringify({ type: 'error', message: 'Room is full' }));
+        return;
+    }
+    
+    if (room.isNameTaken(name)) {
+        ws.send(JSON.stringify({ type: 'error', message: 'Name already taken in this room' }));
+        return;
+    }
+    
+    // Leave any existing room
+    handleLeaveRoom(ws);
+    
+    const playerId = room.addPlayer(ws, name);
+    playerRooms.set(ws, code);
+    
+    // Notify the joining player
+    ws.send(JSON.stringify({
+        type: 'room_joined',
+        roomCode: code,
+        playerId: playerId,
+        isHost: false,
+        players: room.getPlayerList(),
+        hardMode: room.hardMode,
+    }));
+    
+    // Notify other players
+    broadcastToRoom(code, {
+        type: 'player_joined',
+        players: room.getPlayerList(),
+    }, ws);
+    
+    console.log(`${name} joined room ${code}`);
+}
+
+function handleLeaveRoom(ws) {
+    const code = playerRooms.get(ws);
+    if (!code) return;
+    
+    const room = rooms.get(code);
+    if (!room) {
+        playerRooms.delete(ws);
+        return;
+    }
+    
+    const result = room.removePlayer(ws);
+    playerRooms.delete(ws);
+    
+    if (result.player) {
+        console.log(`${result.player.name} left room ${code}`);
+    }
+    
+    // If room is empty, delete it
+    if (room.players.size === 0) {
+        rooms.delete(code);
+        console.log(`Room ${code} deleted (empty)`);
+        return;
+    }
+    
+    // If game was playing and someone left, check if only one player remains
+    if (room.state === 'playing') {
+        const alivePlayers = [...room.players.values()].filter(p => !p.eliminated);
+        if (alivePlayers.length <= 1) {
+            // End the game
+            room.state = 'finished';
+            if (alivePlayers.length === 1) {
+                room.winner = alivePlayers[0];
+            }
+            const rankings = room.calculateRankings();
+            
+            broadcastToRoom(code, {
+                type: 'game_over',
+                winner: room.winner ? { name: room.winner.name, color: room.winner.color } : null,
+                rankings: rankings,
+                captureGrid: room.captureGrid,
+            });
+        }
+    }
+    
+    // Notify remaining players
+    const updateMsg = {
+        type: 'player_left',
+        players: room.getPlayerList(),
+        leftPlayer: result.player ? result.player.name : null,
+    };
+    
+    if (result.newHost) {
+        updateMsg.newHostId = room.players.get(result.newHost).id;
+    }
+    
+    broadcastToRoom(code, updateMsg);
+}
+
+function handleStartMultiplayer(ws, data) {
+    const code = playerRooms.get(ws);
+    if (!code) {
+        ws.send(JSON.stringify({ type: 'error', message: 'Not in a room' }));
+        return;
+    }
+    
+    const room = rooms.get(code);
+    if (!room) {
+        ws.send(JSON.stringify({ type: 'error', message: 'Room not found' }));
+        return;
+    }
+    
+    if (ws !== room.host) {
+        ws.send(JSON.stringify({ type: 'error', message: 'Only host can start the game' }));
+        return;
+    }
+    
+    if (room.players.size < 2) {
+        ws.send(JSON.stringify({ type: 'error', message: 'Need at least 2 players to start' }));
+        return;
+    }
+    
+    if (room.state !== 'lobby') {
+        ws.send(JSON.stringify({ type: 'error', message: 'Game already started' }));
+        return;
+    }
+    
+    // Set hard mode if specified
+    room.hardMode = data.hardMode === true;
+    room.state = 'playing';
+    room.captureGrid = room.createCaptureGrid(); // Reset capture grid
+    
+    // Reset all player stats
+    for (const [playerWs, player] of room.players) {
+        player.score = 0;
+        player.lines = 0;
+        player.tilesOwned = 0;
+        player.eliminated = false;
+        player.lastClearSize = 0;
+    }
+    
+    broadcastToRoom(code, {
+        type: 'game_started',
+        hardMode: room.hardMode,
+        players: room.getPlayerList(),
+        captureGrid: room.captureGrid,
+    });
+    
+    console.log(`Game started in room ${code} (Hard: ${room.hardMode})`);
+}
+
+async function handleLineClear(ws, data) {
+    const code = playerRooms.get(ws);
+    if (!code) return;
+    
+    const room = rooms.get(code);
+    if (!room || room.state !== 'playing') return;
+    
+    const player = room.players.get(ws);
+    if (!player || player.eliminated) return;
+    
+    const linesCleared = Number(data.lines) || 0;
+    const score = Number(data.score) || 0;
+    
+    player.lines += linesCleared;
+    player.score = score;
+    
+    // Capture tiles on the grid
+    const captured = room.captureTiles(player.id, linesCleared);
+    
+    // Check for win
+    const winner = room.checkWin();
+    
+    if (winner) {
+        room.state = 'finished';
+        room.winner = winner;
+        const rankings = room.calculateRankings();
+        
+        // Add scores to leaderboard
+        for (const [playerWs, p] of room.players) {
+            if (p.score > 0) {
+                await upsertScore(p.name, p.score, room.hardMode);
+            }
+        }
+        await broadcastLeaderboard();
+        
+        broadcastToRoom(code, {
+            type: 'game_over',
+            winner: { name: winner.name, color: winner.color },
+            rankings: rankings,
+            captureGrid: room.captureGrid,
+        });
+        
+        console.log(`Game over in room ${code}. Winner: ${winner.name}`);
+    } else {
+        // Broadcast grid update to all players
+        broadcastToRoom(code, {
+            type: 'grid_update',
+            playerId: player.id,
+            playerName: player.name,
+            linesCleared: linesCleared,
+            captured: captured,
+            captureGrid: room.captureGrid,
+            players: room.getPlayerList(),
+        });
+    }
+}
+
+async function handlePlayerEliminated(ws, data) {
+    const code = playerRooms.get(ws);
+    if (!code) return;
+    
+    const room = rooms.get(code);
+    if (!room || room.state !== 'playing') return;
+    
+    const player = room.players.get(ws);
+    if (!player || player.eliminated) return;
+    
+    player.eliminated = true;
+    player.score = Number(data.score) || player.score;
+    
+    // Notify all players
+    broadcastToRoom(code, {
+        type: 'player_eliminated',
+        playerId: player.id,
+        playerName: player.name,
+        players: room.getPlayerList(),
+    });
+    
+    // Check if game should end (one or fewer players remaining)
+    const alivePlayers = [...room.players.values()].filter(p => !p.eliminated);
+    
+    if (alivePlayers.length <= 1) {
+        room.state = 'finished';
+        room.winner = alivePlayers.length === 1 ? alivePlayers[0] : null;
+        const rankings = room.calculateRankings();
+        
+        // Add scores to leaderboard
+        for (const [playerWs, p] of room.players) {
+            if (p.score > 0) {
+                await upsertScore(p.name, p.score, room.hardMode);
+            }
+        }
+        await broadcastLeaderboard();
+        
+        broadcastToRoom(code, {
+            type: 'game_over',
+            winner: room.winner ? { name: room.winner.name, color: room.winner.color } : null,
+            rankings: rankings,
+            captureGrid: room.captureGrid,
+        });
+        
+        console.log(`Game over in room ${code}. Winner: ${room.winner?.name || 'None'}`);
+    }
+}
+
+function handleUpdateScore(ws, data) {
+    const code = playerRooms.get(ws);
+    if (!code) return;
+    
+    const room = rooms.get(code);
+    if (!room || room.state !== 'playing') return;
+    
+    const player = room.players.get(ws);
+    if (!player) return;
+    
+    player.score = Number(data.score) || player.score;
+    player.lines = Number(data.lines) || player.lines;
+    
+    // Broadcast score update to other players
+    broadcastToRoom(code, {
+        type: 'score_update',
+        playerId: player.id,
+        score: player.score,
+        lines: player.lines,
+    }, ws);
+}
+
+// ============================================
+// BROADCAST FUNCTIONS
+// ============================================
+
+function broadcastToRoom(roomCode, message, excludeWs = null) {
+    const room = rooms.get(roomCode);
+    if (!room) return;
+    
+    const msgStr = JSON.stringify(message);
+    
+    for (const [ws] of room.players) {
+        if (ws !== excludeWs && ws.readyState === WebSocket.OPEN) {
+            ws.send(msgStr);
+        }
+    }
+}
+
+async function sendLeaderboard(ws) {
+    const leaderboard = await getLeaderboard(false);
+    const leaderboardHard = await getLeaderboard(true);
+    
+    const names = leaderboard.map((entry) => entry.name);
+    const scores = leaderboard.map((entry) => entry.score);
+    const namesHard = leaderboardHard.map((entry) => entry.name);
+    const scoresHard = leaderboardHard.map((entry) => entry.score);
+
+    ws.send(JSON.stringify({ names, scores, namesHard, scoresHard }));
+}
+
+async function broadcastLeaderboard() {
+    const leaderboard = await getLeaderboard(false);
+    const leaderboardHard = await getLeaderboard(true);
+    
+    const names = leaderboard.map((entry) => entry.name);
+    const scores = leaderboard.map((entry) => entry.score);
+    const namesHard = leaderboardHard.map((entry) => entry.name);
+    const scoresHard = leaderboardHard.map((entry) => entry.score);
+
+    const message = JSON.stringify({ names, scores, namesHard, scoresHard });
+
+    wss.clients.forEach((client) => {
+        if (client.readyState === WebSocket.OPEN) {
+            client.send(message);
+        }
+    });
+}
+
+// ============================================
+// HTTP ROUTES
+// ============================================
+
+app.get('/', (req, res) => {
+    res.send('Tetris Territory Wars server is running. Connect via WebSocket to play.');
+});
+
+app.get('/db-check', async (req, res) => {
+    try {
+        const connection = await mysql.createConnection(dbConfig);
+        await connection.ping();
+        await connection.end();
+        res.send('Successfully connected to MySQL database!');
+    } catch (err) {
+        res.status(500).send('Database connection failed: ' + err.stack);
+    }
+});
+
+// ============================================
+// SERVER STARTUP
+// ============================================
+
+async function startServer() {
+    let retries = 10;
+    while (retries > 0) {
+        try {
+            await initDatabase();
+            server.listen(port, () => {
+                console.log(`HTTP/WebSocket server listening on port ${port}`);
+            });
+            return;
+        } catch (err) {
+            console.error(`Failed to initialize database (retries left: ${retries}):`, err.message);
+            retries--;
+            await new Promise(resolve => setTimeout(resolve, 5000));
+        }
+    }
+    console.error('Could not connect to database after multiple attempts. Exiting.');
+    process.exit(1);
 }
 
 startServer();
 
-// Graceful shutdown
 process.on('SIGINT', () => {
-  console.log('\nShutting down server...');
-  wss.close(() => {
-    console.log('WebSocket server closed');
-    server.close(() => {
-      console.log('HTTP server closed');
-      process.exit(0);
+    console.log('\nShutting down server...');
+    wss.close(() => {
+        console.log('WebSocket server closed');
+        server.close(() => {
+            console.log('HTTP server closed');
+            process.exit(0);
+        });
     });
-  });
 });
