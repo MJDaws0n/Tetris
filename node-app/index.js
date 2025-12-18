@@ -113,6 +113,23 @@ class Room {
         return false;
     }
     
+    // Get initial position for player (equally spaced around the grid)
+    getInitialPosition(playerId, totalPlayers) {
+        // Place players equally spaced around the perimeter or in a grid pattern
+        const positions = [
+            { x: 2, y: 2 },   // Top-left
+            { x: 7, y: 2 },   // Top-right
+            { x: 7, y: 7 },   // Bottom-right
+            { x: 2, y: 7 },   // Bottom-left
+            { x: 4, y: 1 },   // Top-center
+            { x: 8, y: 4 },   // Right-center
+            { x: 4, y: 8 },   // Bottom-center
+            { x: 1, y: 4 },   // Left-center
+        ];
+        
+        return positions[(playerId - 1) % positions.length];
+    }
+    
     // Count tiles owned by each player
     countTiles() {
         const counts = {};
@@ -127,22 +144,17 @@ class Room {
         return counts;
     }
     
-    // Check for win condition: connected path from one side to the other
+    // Check for win condition: player owns all 100 tiles
     checkWin() {
         const tileCounts = this.countTiles();
         
         for (const [ws, player] of this.players) {
             if (player.eliminated) continue;
             
-            const playerId = player.id;
+            const tilesOwned = tileCounts[player.id] || 0;
             
-            // Check left-to-right path
-            if (this.hasPath(playerId, 'horizontal')) {
-                return player;
-            }
-            
-            // Check top-to-bottom path
-            if (this.hasPath(playerId, 'vertical')) {
+            // Win if player owns all 100 tiles
+            if (tilesOwned === 100) {
                 return player;
             }
         }
@@ -200,7 +212,7 @@ class Room {
         return false;
     }
     
-    // Capture tiles when a player clears lines
+    // Capture tiles when a player clears lines - Clockwise spiral pattern with aggressive overriding
     captureTiles(playerId, linesCleared) {
         if (linesCleared <= 0) return [];
         
@@ -212,9 +224,6 @@ class Room {
         const captured = [];
         let remaining = linesCleared;
         
-        // Strategy: Try to capture tiles adjacent to existing territory first
-        // Then capture empty tiles, then potentially steal opponent tiles
-        
         // Find all cells owned by this player
         const ownedCells = [];
         for (let y = 0; y < 10; y++) {
@@ -225,105 +234,89 @@ class Room {
             }
         }
         
-        // Find empty adjacent cells first
-        const adjacentEmpty = new Set();
-        const adjacentOpponent = [];
-        
-        for (const cell of ownedCells) {
-            const neighbors = [
-                { x: cell.x - 1, y: cell.y },
-                { x: cell.x + 1, y: cell.y },
-                { x: cell.x, y: cell.y - 1 },
-                { x: cell.x, y: cell.y + 1 },
-            ];
-            
-            for (const n of neighbors) {
-                if (n.x >= 0 && n.x < 10 && n.y >= 0 && n.y < 10) {
-                    const current = this.captureGrid[n.y][n.x];
-                    if (current === 0) {
-                        adjacentEmpty.add(`${n.x},${n.y}`);
-                    } else if (current !== playerId) {
-                        adjacentOpponent.push({ x: n.x, y: n.y, owner: current });
-                    }
-                }
-            }
-        }
-        
-        // Capture adjacent empty cells
-        for (const key of adjacentEmpty) {
-            if (remaining <= 0) break;
-            const [x, y] = key.split(',').map(Number);
-            this.captureGrid[y][x] = playerId;
-            captured.push({ x, y });
-            remaining--;
-        }
-        
-        // If player has no territory yet, place randomly in middle area
+        // If player has no territory yet, place at their initial position
         if (ownedCells.length === 0 && remaining > 0) {
-            const emptyCells = [];
-            for (let y = 2; y < 8; y++) {
-                for (let x = 2; x < 8; x++) {
-                    if (this.captureGrid[y][x] === 0) {
-                        emptyCells.push({ x, y });
-                    }
-                }
+            const pos = this.getInitialPosition(playerId, this.players.size);
+            // Override whatever is there
+            this.captureGrid[pos.y][pos.x] = playerId;
+            captured.push(pos);
+            remaining--;
+            ownedCells.push(pos);
+        }
+        
+        // Capture tiles in clockwise spiral pattern from owned territory
+        while (remaining > 0 && ownedCells.length > 0) {
+            const spiralCells = this.getSpiralCells(ownedCells);
+            
+            if (spiralCells.length === 0) {
+                // No more cells to capture - board is full or unreachable
+                break;
             }
             
-            // Shuffle and take
-            for (let i = emptyCells.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [emptyCells[i], emptyCells[j]] = [emptyCells[j], emptyCells[i]];
-            }
-            
-            for (const cell of emptyCells) {
+            // Take cells in clockwise order
+            for (const cell of spiralCells) {
                 if (remaining <= 0) break;
+                
+                // Override any tile (empty or opponent)
                 this.captureGrid[cell.y][cell.x] = playerId;
                 captured.push(cell);
+                ownedCells.push(cell);
                 remaining--;
             }
         }
         
-        // Try to capture any remaining empty cells on the board
-        if (remaining > 0) {
-            for (let y = 0; y < 10 && remaining > 0; y++) {
-                for (let x = 0; x < 10 && remaining > 0; x++) {
-                    if (this.captureGrid[y][x] === 0) {
-                        this.captureGrid[y][x] = playerId;
-                        captured.push({ x, y });
-                        remaining--;
+        // Update tile counts for all players and check for elimination
+        const counts = this.countTiles();
+        for (const [ws, p] of this.players) {
+            p.tilesOwned = counts[p.id] || 0;
+            
+            // Eliminate players with zero tiles
+            if (p.tilesOwned === 0 && !p.eliminated && p.id !== playerId) {
+                p.eliminated = true;
+            }
+        }
+        
+        return captured;
+    }
+    
+    // Get next layer of cells in clockwise spiral pattern
+    getSpiralCells(ownedCells) {
+        const borderCells = new Map(); // key -> {x, y, angle}
+        
+        // Find all cells adjacent to owned territory
+        for (const cell of ownedCells) {
+            const neighbors = [
+                { x: cell.x, y: cell.y - 1, angle: 0 },      // Top
+                { x: cell.x + 1, y: cell.y, angle: 90 },     // Right
+                { x: cell.x, y: cell.y + 1, angle: 180 },    // Bottom
+                { x: cell.x - 1, y: cell.y, angle: 270 },    // Left
+            ];
+            
+            for (const n of neighbors) {
+                if (n.x >= 0 && n.x < 10 && n.y >= 0 && n.y < 10) {
+                    const key = `${n.x},${n.y}`;
+                    // Check if this cell is not already owned by this player
+                    const owner = this.captureGrid[n.y][n.x];
+                    const ownerPlayerId = ownedCells.length > 0 ? 
+                        this.captureGrid[ownedCells[0].y][ownedCells[0].x] : 0;
+                    
+                    if (owner !== ownerPlayerId && !borderCells.has(key)) {
+                        // Calculate angle from center of owned territory
+                        const centerX = ownedCells.reduce((sum, c) => sum + c.x, 0) / ownedCells.length;
+                        const centerY = ownedCells.reduce((sum, c) => sum + c.y, 0) / ownedCells.length;
+                        const angle = Math.atan2(n.y - centerY, n.x - centerX) * (180 / Math.PI);
+                        const normalizedAngle = (angle + 360) % 360;
+                        
+                        borderCells.set(key, { x: n.x, y: n.y, angle: normalizedAngle });
                     }
                 }
             }
         }
         
-        // If still remaining and clear was big (3+), try to steal from opponents
-        if (remaining > 0 && linesCleared >= 3) {
-            // Sort opponent cells by owner's last clear size (steal from weaker players)
-            adjacentOpponent.sort((a, b) => {
-                const ownerA = [...this.players.values()].find(p => p.id === a.owner);
-                const ownerB = [...this.players.values()].find(p => p.id === b.owner);
-                return (ownerA?.lastClearSize || 0) - (ownerB?.lastClearSize || 0);
-            });
-            
-            for (const cell of adjacentOpponent) {
-                if (remaining <= 0) break;
-                const owner = [...this.players.values()].find(p => p.id === cell.owner);
-                // Can steal if our clear is bigger than their last clear
-                if (!owner || linesCleared > owner.lastClearSize) {
-                    this.captureGrid[cell.y][cell.x] = playerId;
-                    captured.push({ x: cell.x, y: cell.y, stolen: true, from: cell.owner });
-                    remaining--;
-                }
-            }
-        }
+        // Sort by angle (clockwise from top: 0°, 90°, 180°, 270°)
+        const sorted = Array.from(borderCells.values()).sort((a, b) => a.angle - b.angle);
         
-        // Update tile counts for all players
-        const counts = this.countTiles();
-        for (const [ws, p] of this.players) {
-            p.tilesOwned = counts[p.id] || 0;
-        }
-        
-        return captured;
+        return sorted;
     }
     
     // Calculate final rankings
@@ -342,7 +335,7 @@ class Room {
             });
         }
         
-        // Sort by: winner first, then tiles owned, then score
+        // Sort by: winner first (100 tiles), then alive status, then tiles owned, then score
         rankings.sort((a, b) => {
             if (this.winner && a.name === this.winner.name) return -1;
             if (this.winner && b.name === this.winner.name) return 1;

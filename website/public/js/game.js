@@ -505,7 +505,7 @@ class TetrisApp {
         
         // Create multiplayer game
         const myPlayer = this.players.find(p => p.id === this.playerId);
-        this.multiplayerGame = new MultiplayerGame(this, myPlayer.name, hardMode);
+        this.multiplayerGame = new MultiplayerGame(this, myPlayer.name, hardMode, myPlayer.color, myPlayer.id);
         this.multiplayerGame.start();
     }
     
@@ -1471,9 +1471,11 @@ class SinglePlayerGame {
 // ============================================
 
 class MultiplayerGame extends SinglePlayerGame {
-    constructor(app, playerName, hardMode) {
+    constructor(app, playerName, hardMode, playerColor, playerId) {
         super(app, playerName, true, hardMode);
         this.myTilesOwned = 0;
+        this.playerColor = playerColor;
+        this.myPlayerId = playerId;
     }
     
     clearLines() {
@@ -1577,6 +1579,12 @@ class MultiplayerGame extends SinglePlayerGame {
             }
         }
         
+        // Check if player lost all tiles
+        const myPlayer = players.find(p => p.id === this.app.playerId);
+        if (myPlayer && myPlayer.tilesOwned === 0 && !this.gameOver) {
+            this.showScorePopup('All tiles lost!\nYou\'re eliminated!');
+        }
+        
         this.updatePlayers(players);
     }
     
@@ -1624,6 +1632,11 @@ class MultiplayerGame extends SinglePlayerGame {
             
             container.appendChild(card);
         });
+    }
+    
+    getColor(type) {
+        // Use player's capture grid color for all Tetris pieces
+        return this.playerColor || '#0a84ff';
     }
 }
 
