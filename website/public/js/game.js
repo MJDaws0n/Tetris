@@ -639,17 +639,23 @@ class TetrisApp {
             announcement.textContent = 'Game Over!';
         }
         
-        // Podium (top 3)
+        // Podium (top 3) - Display order: 2nd, 1st, 3rd
         const podiumContainer = document.getElementById('podiumContainer');
         podiumContainer.innerHTML = '';
         
-        const podiumPlaces = ['second', 'first', 'third'];
+        const top3 = rankings.slice(0, 3);
+        
+        // Create podium in visual order: 2nd (left), 1st (center), 3rd (right)
+        const displayOrder = [1, 0, 2]; // indices into top3 array
+        const podiumClasses = ['second', 'first', 'third'];
         const podiumIcons = ['2️⃣', '1️⃣', '3️⃣'];
         
-        rankings.slice(0, 3).forEach((player, idx) => {
-            const actualIdx = idx === 0 ? 1 : (idx === 1 ? 0 : 2);
+        displayOrder.forEach((rankIdx, displayIdx) => {
+            if (rankIdx >= top3.length) return; // Skip if not enough players
+            
+            const player = top3[rankIdx];
             const place = document.createElement('div');
-            place.className = `podium-place ${podiumPlaces[actualIdx]}`;
+            place.className = `podium-place ${podiumClasses[displayIdx]}`;
             
             const avatar = document.createElement('div');
             avatar.className = 'podium-avatar';
@@ -666,7 +672,7 @@ class TetrisApp {
             
             const stand = document.createElement('div');
             stand.className = 'podium-stand';
-            stand.textContent = podiumIcons[actualIdx];
+            stand.textContent = podiumIcons[displayIdx];
             
             place.appendChild(avatar);
             place.appendChild(name);
