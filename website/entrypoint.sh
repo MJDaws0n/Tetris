@@ -3,17 +3,10 @@
 
 set -e
 
-# Set correct paths for Apache container
-env_file="/usr/local/apache2/.env"
-[ -f "$env_file" ] || env_file="/usr/local/apache2/.env.example"
 
-# Extract VERSION and WS_URL from .env or use defaults
-game_version=$(grep '^GAME_VERSION=' "$env_file" | cut -d '=' -f2-)
-ws_url=$(grep '^WS_URL=' "$env_file" | cut -d '=' -f2-)
-
-# Fallbacks if not set
-game_version=${game_version:-3.2.0}
-ws_url=${ws_url:-wss://tetris-server.mjdawson.net:441}
+# Use environment variables directly (for Docker/K8s/Coolify)
+game_version=${GAME_VERSION:-3.2.0}
+ws_url=${WS_URL:-wss://tetris-server.mjdawson.net:441}
 
 # Ensure public dir exists
 mkdir -p /usr/local/apache2/htdocs
