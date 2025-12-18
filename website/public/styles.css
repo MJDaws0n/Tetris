@@ -1337,3 +1337,208 @@ canvas {
     height: 1px;
     background: var(--separator-light);
 }
+/* ============================================
+   TERRITORY WARS SPLIT-SCREEN LAYOUT
+   ============================================ */
+
+/* Multiplayer mode makes game-area a split layout */
+.app-main.multiplayer-mode .game-area {
+    flex: 0 0 auto;
+    width: 50%;
+    order: 2;
+    padding: 16px;
+}
+
+.app-main.multiplayer-mode .sidebar {
+    order: 3;
+    width: 280px;
+}
+
+/* Territory Panel - Left side large board */
+.territory-panel {
+    flex: 0 0 50%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: linear-gradient(135deg, rgba(10, 132, 255, 0.05) 0%, transparent 50%, rgba(191, 90, 242, 0.05) 100%);
+    border-right: 1px solid var(--separator-light);
+    order: 1;
+}
+
+.territory-header {
+    text-align: center;
+    margin-bottom: 24px;
+}
+
+.territory-title {
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin-bottom: 4px;
+    background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.territory-subtitle {
+    font-size: 14px;
+    color: var(--text-secondary);
+}
+
+/* Large Capture Grid */
+.capture-grid-large {
+    display: grid;
+    grid-template-columns: repeat(10, 1fr);
+    grid-template-rows: repeat(10, 1fr);
+    gap: 3px;
+    width: min(400px, 70vmin);
+    height: min(400px, 70vmin);
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-lg);
+    padding: 8px;
+    box-shadow: 
+        0 0 0 1px var(--glass-border),
+        0 20px 60px rgba(0, 0, 0, 0.5),
+        inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.capture-grid-large .capture-cell {
+    width: 100%;
+    height: 100%;
+    background: var(--bg-secondary);
+    border-radius: 4px;
+    transition: all 0.2s ease;
+    border: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.capture-grid-large .capture-cell.captured {
+    transform: scale(1);
+    border-color: rgba(255, 255, 255, 0.15);
+}
+
+.capture-grid-large .capture-cell.my-tile {
+    animation: myTilePulse 2s ease-in-out infinite;
+}
+
+@keyframes myTilePulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+}
+
+/* Territory Legend */
+.territory-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin-top: 24px;
+    justify-content: center;
+    padding: 16px 24px;
+    background: var(--glass-bg);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--glass-border);
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.legend-color {
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.legend-item.eliminated {
+    opacity: 0.4;
+    text-decoration: line-through;
+}
+
+.legend-tiles {
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: 12px;
+    margin-left: 4px;
+    background: var(--bg-tertiary);
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+/* Compact multiplayer sidebar */
+.sidebar.multiplayer-compact {
+    width: 280px;
+    padding: 16px;
+}
+
+.multiplayer-compact .sidebar-card {
+    padding: 12px;
+    margin-bottom: 12px;
+}
+
+.multiplayer-compact .sidebar-card-title {
+    font-size: 11px;
+    margin-bottom: 8px;
+}
+
+.multiplayer-compact .current-stat {
+    padding: 4px 0;
+    font-size: 12px;
+}
+
+.multiplayer-compact .current-stat strong {
+    font-size: 14px;
+}
+
+/* Opponents list in compact sidebar */
+.opponents-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.opponent-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: var(--bg-secondary);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--glass-border);
+}
+
+.opponent-card.eliminated {
+    opacity: 0.4;
+}
+
+.opponent-color {
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    flex-shrink: 0;
+}
+
+.opponent-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.opponent-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.opponent-stats {
+    font-size: 11px;
+    color: var(--text-tertiary);
+}

@@ -286,44 +286,93 @@ class Room {
         return captured;
     }
     
-    // Get next layer of cells in clockwise spiral pattern
+    // Get next cells in TRUE clockwise spiral pattern
+    // Spiral goes: right, down, left, up, right, down... expanding outward
     getSpiralCells(ownedCells) {
-        const borderCells = new Map(); // key -> {x, y, angle}
+        const playerId = ownedCells.length > 0 ? 
+            this.captureGrid[ownedCells[0].y][ownedCells[0].x] : 0;
         
-        // Find all cells adjacent to owned territory
+        // Build a set of owned positions for fast lookup
+        const ownedSet = new Set(ownedCells.map(c => `${c.x},${c.y}`));
+        
+        // Find the bounding box of owned territory
+        let minX = 10, maxX = -1, minY = 10, maxY = -1;
         for (const cell of ownedCells) {
-            const neighbors = [
-                { x: cell.x, y: cell.y - 1, angle: 0 },      // Top
-                { x: cell.x + 1, y: cell.y, angle: 90 },     // Right
-                { x: cell.x, y: cell.y + 1, angle: 180 },    // Bottom
-                { x: cell.x - 1, y: cell.y, angle: 270 },    // Left
-            ];
-            
-            for (const n of neighbors) {
-                if (n.x >= 0 && n.x < 10 && n.y >= 0 && n.y < 10) {
-                    const key = `${n.x},${n.y}`;
-                    // Check if this cell is not already owned by this player
-                    const owner = this.captureGrid[n.y][n.x];
-                    const ownerPlayerId = ownedCells.length > 0 ? 
-                        this.captureGrid[ownedCells[0].y][ownedCells[0].x] : 0;
-                    
-                    if (owner !== ownerPlayerId && !borderCells.has(key)) {
-                        // Calculate angle from center of owned territory
-                        const centerX = ownedCells.reduce((sum, c) => sum + c.x, 0) / ownedCells.length;
-                        const centerY = ownedCells.reduce((sum, c) => sum + c.y, 0) / ownedCells.length;
-                        const angle = Math.atan2(n.y - centerY, n.x - centerX) * (180 / Math.PI);
-                        const normalizedAngle = (angle + 360) % 360;
-                        
-                        borderCells.set(key, { x: n.x, y: n.y, angle: normalizedAngle });
+            minX = Math.min(minX, cell.x);
+            maxX = Math.max(maxX, cell.x);
+            minY = Math.min(minY, cell.y);
+            maxY = Math.max(maxY, cell.y);
+        }
+        
+        // Generate spiral order starting from center of territory, going clockwise
+        const spiralOrder = [];
+        const centerX = Math.floor((minX + maxX) / 2);
+        const centerY = Math.floor((minY + maxY) / 2);
+        
+        // Directions: right, down, left, up (clockwise)
+        const dx = [1, 0, -1, 0];
+        const dy = [0, 1, 0, -1];
+        
+        let x = centerX, y = centerY;
+        let direction = 0; // Start going right
+        let stepsInDirection = 1;
+        let stepsTaken = 0;
+        let turnsAtCurrentLength = 0;
+        
+        // Generate spiral coordinates covering entire 10x10 grid
+        const visited = new Set();
+        for (let i = 0; i < 200; i++) { // More than enough for 10x10
+            if (x >= 0 && x < 10 && y >= 0 && y < 10) {
+                const key = `${x},${y}`;
+                if (!visited.has(key)) {
+                    visited.add(key);
+                    // Only add if not owned by this player
+                    if (!ownedSet.has(key)) {
+                        spiralOrder.push({ x, y });
                     }
+                }
+            }
+            
+            // Move in current direction
+            x += dx[direction];
+            y += dy[direction];
+            stepsTaken++;
+            
+            // Check if we need to turn
+            if (stepsTaken >= stepsInDirection) {
+                stepsTaken = 0;
+                direction = (direction + 1) % 4; // Turn clockwise
+                turnsAtCurrentLength++;
+                
+                // After every 2 turns, increase the step length
+                if (turnsAtCurrentLength >= 2) {
+                    turnsAtCurrentLength = 0;
+                    stepsInDirection++;
                 }
             }
         }
         
-        // Sort by angle (clockwise from top: 0°, 90°, 180°, 270°)
-        const sorted = Array.from(borderCells.values()).sort((a, b) => a.angle - b.angle);
+        // Return cells that are adjacent to owned territory first (for connected growth)
+        const adjacentCells = [];
+        const nonAdjacentCells = [];
         
-        return sorted;
+        for (const cell of spiralOrder) {
+            const isAdjacent = [
+                { x: cell.x - 1, y: cell.y },
+                { x: cell.x + 1, y: cell.y },
+                { x: cell.x, y: cell.y - 1 },
+                { x: cell.x, y: cell.y + 1 },
+            ].some(n => ownedSet.has(`${n.x},${n.y}`));
+            
+            if (isAdjacent) {
+                adjacentCells.push(cell);
+            } else {
+                nonAdjacentCells.push(cell);
+            }
+        }
+        
+        // Return adjacent cells first (maintains connected territory), then others
+        return [...adjacentCells, ...nonAdjacentCells];
     }
     
     // Calculate final rankings

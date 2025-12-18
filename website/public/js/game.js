@@ -177,6 +177,16 @@ class TetrisApp {
         if (this.multiplayerSidebar) {
             this.multiplayerSidebar.classList.add('hidden');
         }
+        
+        // Hide territory panel and reset layout
+        const territoryPanel = document.getElementById('territoryPanel');
+        if (territoryPanel) {
+            territoryPanel.classList.add('hidden');
+        }
+        const appMain = document.querySelector('.app-main');
+        if (appMain) {
+            appMain.classList.remove('multiplayer-mode');
+        }
     }
     
     _hideAllModals() {
@@ -497,21 +507,120 @@ class TetrisApp {
         // Hide lobby, start game
         this._hideAllModals();
         
-        // Switch to multiplayer sidebar
+        // Switch to multiplayer layout (split-screen)
         this.singleSidebar.classList.add('hidden');
         if (this.multiplayerSidebar) {
             this.multiplayerSidebar.classList.remove('hidden');
         }
         
+        // Show territory panel
+        const territoryPanel = document.getElementById('territoryPanel');
+        if (territoryPanel) {
+            territoryPanel.classList.remove('hidden');
+        }
+        
+        // Add multiplayer mode class for split layout
+        const appMain = document.querySelector('.app-main');
+        if (appMain) {
+            appMain.classList.add('multiplayer-mode');
+        }
+        
+        // Initialize the large capture grid
+        this._initLargeCaptureGrid();
+        this._updateTerritoryLegend(this.players);
+        
         // Create multiplayer game
         const myPlayer = this.players.find(p => p.id === this.playerId);
         this.multiplayerGame = new MultiplayerGame(this, myPlayer.name, hardMode, myPlayer.color, myPlayer.id);
         this.multiplayerGame.start();
+        
+        // Update grid immediately with starting positions
+        this._updateLargeCaptureGrid(this.captureGrid, this.players);
+    }
+    
+    _initLargeCaptureGrid() {
+        const gridEl = document.getElementById('captureGridLarge');
+        if (!gridEl || gridEl.children.length > 0) return;
+        
+        for (let i = 0; i < 100; i++) {
+            const cell = document.createElement('div');
+            cell.className = 'capture-cell';
+            gridEl.appendChild(cell);
+        }
+    }
+    
+    _updateLargeCaptureGrid(grid, players) {
+        const gridEl = document.getElementById('captureGridLarge');
+        if (!gridEl) return;
+        
+        for (let y = 0; y < 10; y++) {
+            for (let x = 0; x < 10; x++) {
+                const idx = y * 10 + x;
+                const cell = gridEl.children[idx];
+                if (!cell) continue;
+                
+                const owner = grid[y][x];
+                
+                if (owner > 0) {
+                    const player = players.find(p => p.id === owner);
+                    if (player) {
+                        cell.style.background = player.color;
+                        cell.classList.add('captured');
+                        
+                        // Highlight own tiles
+                        if (player.id === this.playerId) {
+                            cell.classList.add('my-tile');
+                            cell.style.boxShadow = `0 0 12px ${player.color}, inset 0 0 6px rgba(255,255,255,0.3)`;
+                        } else {
+                            cell.classList.remove('my-tile');
+                            cell.style.boxShadow = `inset 0 0 4px rgba(0,0,0,0.4)`;
+                        }
+                    }
+                } else {
+                    cell.style.background = '';
+                    cell.style.boxShadow = '';
+                    cell.classList.remove('captured', 'my-tile');
+                }
+            }
+        }
+        
+        this._updateTerritoryLegend(players);
+    }
+    
+    _updateTerritoryLegend(players) {
+        const legend = document.getElementById('territoryLegend');
+        if (!legend) return;
+        
+        legend.innerHTML = '';
+        
+        players.forEach(player => {
+            const item = document.createElement('div');
+            item.className = 'legend-item' + (player.eliminated ? ' eliminated' : '');
+            
+            const color = document.createElement('div');
+            color.className = 'legend-color';
+            color.style.background = player.color;
+            
+            const name = document.createElement('span');
+            name.textContent = player.name;
+            
+            const tiles = document.createElement('span');
+            tiles.className = 'legend-tiles';
+            tiles.textContent = player.tilesOwned;
+            
+            item.appendChild(color);
+            item.appendChild(name);
+            item.appendChild(tiles);
+            legend.appendChild(item);
+        });
     }
     
     _onGridUpdate(message) {
         this.captureGrid = message.captureGrid;
         this.players = message.players;
+        
+        // Update the large capture grid
+        this._updateLargeCaptureGrid(this.captureGrid, this.players);
         
         if (this.multiplayerGame) {
             this.multiplayerGame.updateCaptureGrid(this.captureGrid, this.players);
@@ -1622,37 +1731,27 @@ class MultiplayerGame extends SinglePlayerGame {
         
         opponents.forEach(opponent => {
             const card = document.createElement('div');
-            card.className = 'sidebar-card opponent-preview';
+            card.className = 'opponent-card' + (opponent.eliminated ? ' eliminated' : '');
             
-            const header = document.createElement('div');
-            header.className = 'opponent-header';
+            const color = document.createElement('div');
+            color.className = 'opponent-color';
+            color.style.background = opponent.color;
+            
+            const info = document.createElement('div');
+            info.className = 'opponent-info';
             
             const name = document.createElement('div');
             name.className = 'opponent-name';
-            
-            const dot = document.createElement('span');
-            dot.className = `status-dot ${opponent.eliminated ? 'eliminated' : ''}`;
-            
-            const nameText = document.createTextNode(opponent.name);
-            
-            name.appendChild(dot);
-            name.appendChild(nameText);
-            
-            const score = document.createElement('div');
-            score.className = 'opponent-score';
-            score.textContent = `${opponent.score} pts`;
-            
-            header.appendChild(name);
-            header.appendChild(score);
+            name.textContent = opponent.name;
             
             const stats = document.createElement('div');
-            stats.style.fontSize = '11px';
-            stats.style.color = '#636366';
-            stats.style.marginTop = '4px';
-            stats.textContent = `${opponent.tilesOwned} tiles captured`;
+            stats.className = 'opponent-stats';
+            stats.textContent = `${opponent.score} pts • ${opponent.tilesOwned} tiles`;
             
-            card.appendChild(header);
-            card.appendChild(stats);
+            info.appendChild(name);
+            info.appendChild(stats);
+            card.appendChild(color);
+            card.appendChild(info);
             
             container.appendChild(card);
         });
