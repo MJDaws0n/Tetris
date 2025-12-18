@@ -33,7 +33,7 @@ class TetrisApp {
         
         // Sidebars
         this.singleSidebar = document.getElementById('sidebar');
-        this.multiplayer = document.getElementById('multiplayerSidebar');
+        this.multiplayerSidebar = document.getElementById('multiplayerSidebar');
     }
     
     init() {
@@ -1200,13 +1200,18 @@ class SinglePlayerGame {
         }
     }
     
-    showScorePopup(points) {
+    showScorePopup(text) {
         const container = document.getElementById('scorePopups');
         if (!container) return;
         
         const popup = document.createElement('div');
         popup.className = 'score-popup';
-        popup.textContent = `+${points}`;
+        // Support multi-line text
+        if (typeof text === 'string' && text.includes('\n')) {
+            popup.innerHTML = text.split('\n').map(line => `<div>${line}</div>`).join('');
+        } else {
+            popup.textContent = typeof text === 'number' ? `+${text}` : text;
+        }
         popup.style.left = '50%';
         popup.style.top = '40%';
         popup.style.transform = 'translate(-50%, -50%)';
@@ -1215,7 +1220,7 @@ class SinglePlayerGame {
         
         setTimeout(() => {
             if (popup.parentNode) popup.parentNode.removeChild(popup);
-        }, 1000);
+        }, 1500);
     }
     
     handleKey(event) {
@@ -1481,7 +1486,10 @@ class MultiplayerGame extends SinglePlayerGame {
             const points = 100 * linesCleared * linesCleared;
             this.score += points;
             
-            this.showScorePopup(points);
+            // Show popup with capture info
+            const clearType = linesCleared === 4 ? 'TETRIS!' : linesCleared === 3 ? 'TRIPLE!' : linesCleared === 2 ? 'DOUBLE!' : '';
+            const popupText = clearType ? `${clearType}\n+${points}\n${linesCleared} tiles captured!` : `+${points}\n${linesCleared} tile captured`;
+            this.showScorePopup(popupText);
             
             if (this.linesCleared >= this.level * 10) {
                 this.level++;
@@ -1534,7 +1542,7 @@ class MultiplayerGame extends SinglePlayerGame {
             }
         }
         
-        // Update cells
+        // Update cells with better visual feedback
         for (let y = 0; y < 10; y++) {
             for (let x = 0; x < 10; x++) {
                 const idx = y * 10 + x;
@@ -1546,14 +1554,18 @@ class MultiplayerGame extends SinglePlayerGame {
                     if (player) {
                         cell.style.background = player.color;
                         cell.classList.add('captured');
-                        cell.style.color = player.color;
                         
+                        // Add glow effect for own tiles
                         if (player.id === this.app.playerId) {
+                            cell.style.boxShadow = `0 0 8px ${player.color}, inset 0 0 4px ${player.color}`;
                             this.myTilesOwned = player.tilesOwned;
+                        } else {
+                            cell.style.boxShadow = `inset 0 0 2px rgba(0,0,0,0.3)`;
                         }
                     }
                 } else {
                     cell.style.background = '';
+                    cell.style.boxShadow = '';
                     cell.classList.remove('captured');
                 }
             }
