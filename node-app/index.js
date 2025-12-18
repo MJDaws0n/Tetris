@@ -213,7 +213,7 @@ class Room {
         return false;
     }
     
-    // Capture tiles when a player clears lines - BFS flood fill from owned territory
+    // Capture tiles when a player clears lines - Clockwise spiral pattern
     // ALWAYS captures tiles, overriding ANY other player (alive or dead)
     captureTiles(playerId, linesCleared) {
         if (linesCleared <= 0) return [];
@@ -226,8 +226,8 @@ class Room {
         const captured = [];
         let remaining = linesCleared;
         
-        // Helper to get current owned cells
-        const getOwnedCells = () => {
+        // Get all cells owned by this player
+        const getOwnedSet = () => {
             const owned = new Set();
             for (let y = 0; y < 10; y++) {
                 for (let x = 0; x < 10; x++) {
@@ -239,71 +239,37 @@ class Room {
             return owned;
         };
         
+        let ownedSet = getOwnedSet();
+        
         // If player has no territory yet, place at their initial position
-        let ownedSet = getOwnedCells();
         if (ownedSet.size === 0 && remaining > 0) {
             const pos = this.getInitialPosition(playerId, this.players.size);
-            // Override whatever is there (including other players)
             this.captureGrid[pos.y][pos.x] = playerId;
             captured.push(pos);
             remaining--;
-            ownedSet = getOwnedCells();
+            ownedSet.add(`${pos.x},${pos.y}`);
         }
         
-        // Capture one tile at a time using BFS to find nearest capturable cell
+        // Capture tiles in clockwise spiral pattern from owned territory
         while (remaining > 0) {
-            // BFS to find the nearest cell we can capture
-            const queue = [];
-            const visited = new Set();
+            // Generate spiral order of ALL cells we can potentially capture
+            const spiralCells = this.getSpiralCaptureOrder(ownedSet);
             
-            // Start BFS from all owned cells
-            for (const key of ownedSet) {
-                queue.push(key);
-                visited.add(key);
-            }
-            
-            let foundCell = null;
-            
-            while (queue.length > 0 && !foundCell) {
-                const current = queue.shift();
-                const [cx, cy] = current.split(',').map(Number);
-                
-                // Check all 4 neighbors
-                const neighbors = [
-                    { x: cx - 1, y: cy },
-                    { x: cx + 1, y: cy },
-                    { x: cx, y: cy - 1 },
-                    { x: cx, y: cy + 1 },
-                ];
-                
-                for (const n of neighbors) {
-                    if (n.x < 0 || n.x >= 10 || n.y < 0 || n.y >= 10) continue;
-                    
-                    const nKey = `${n.x},${n.y}`;
-                    if (visited.has(nKey)) continue;
-                    visited.add(nKey);
-                    
-                    // Check if this cell is NOT owned by us - if so, capture it!
-                    if (this.captureGrid[n.y][n.x] !== playerId) {
-                        foundCell = { x: n.x, y: n.y };
-                        break;
-                    }
-                    
-                    // Otherwise, it's our cell - add to queue to continue BFS
-                    queue.push(nKey);
-                }
-            }
-            
-            if (!foundCell) {
-                // Player owns the entire board - nothing left to capture
+            if (spiralCells.length === 0) {
+                // Player owns everything
                 break;
             }
             
-            // Capture the found cell (override whoever owns it)
-            this.captureGrid[foundCell.y][foundCell.x] = playerId;
-            captured.push(foundCell);
-            ownedSet.add(`${foundCell.x},${foundCell.y}`);
-            remaining--;
+            // Capture cells in spiral order
+            for (const cell of spiralCells) {
+                if (remaining <= 0) break;
+                
+                // Override any tile (empty, alive player, or dead player)
+                this.captureGrid[cell.y][cell.x] = playerId;
+                captured.push(cell);
+                ownedSet.add(`${cell.x},${cell.y}`);
+                remaining--;
+            }
         }
         
         // Update tile counts for all players and check for elimination
@@ -320,11 +286,98 @@ class Room {
         // Check if only one player remains alive
         const alivePlayers = [...this.players.values()].filter(p => !p.eliminated);
         if (alivePlayers.length === 1) {
-            // Last player standing wins
             this.winner = alivePlayers[0];
         }
         
         return captured;
+    }
+    
+    // Generate clockwise spiral order for capturing cells
+    // Returns cells adjacent to owned territory in spiral order
+    getSpiralCaptureOrder(ownedSet) {
+        if (ownedSet.size === 0) return [];
+        
+        // Find center of owned territory
+        let sumX = 0, sumY = 0;
+        for (const key of ownedSet) {
+            const [x, y] = key.split(',').map(Number);
+            sumX += x;
+            sumY += y;
+        }
+        const centerX = Math.round(sumX / ownedSet.size);
+        const centerY = Math.round(sumY / ownedSet.size);
+        
+        // Generate spiral coordinates from center, clockwise
+        // Directions: right, down, left, up (clockwise)
+        const dx = [1, 0, -1, 0];
+        const dy = [0, 1, 0, -1];
+        
+        const spiralOrder = [];
+        const visited = new Set();
+        
+        let x = centerX, y = centerY;
+        let direction = 0;
+        let stepsInDirection = 1;
+        let stepsTaken = 0;
+        let turnsAtCurrentLength = 0;
+        
+        // Generate spiral covering entire 10x10 grid
+        for (let i = 0; i < 200; i++) {
+            if (x >= 0 && x < 10 && y >= 0 && y < 10) {
+                const key = `${x},${y}`;
+                if (!visited.has(key) && !ownedSet.has(key)) {
+                    visited.add(key);
+                    // Check if this cell is adjacent to owned territory
+                    const isAdjacent = [
+                        `${x-1},${y}`, `${x+1},${y}`, `${x},${y-1}`, `${x},${y+1}`
+                    ].some(k => ownedSet.has(k));
+                    
+                    if (isAdjacent) {
+                        spiralOrder.push({ x, y, dist: i });
+                    }
+                }
+            }
+            
+            // Move in current direction
+            x += dx[direction];
+            y += dy[direction];
+            stepsTaken++;
+            
+            // Check if we need to turn
+            if (stepsTaken >= stepsInDirection) {
+                stepsTaken = 0;
+                direction = (direction + 1) % 4;
+                turnsAtCurrentLength++;
+                
+                if (turnsAtCurrentLength >= 2) {
+                    turnsAtCurrentLength = 0;
+                    stepsInDirection++;
+                }
+            }
+        }
+        
+        // If no adjacent cells found in spiral, find ANY adjacent cell
+        if (spiralOrder.length === 0) {
+            for (const key of ownedSet) {
+                const [ox, oy] = key.split(',').map(Number);
+                const neighbors = [
+                    { x: ox + 1, y: oy }, // right first (clockwise)
+                    { x: ox, y: oy + 1 }, // down
+                    { x: ox - 1, y: oy }, // left
+                    { x: ox, y: oy - 1 }, // up
+                ];
+                for (const n of neighbors) {
+                    if (n.x >= 0 && n.x < 10 && n.y >= 0 && n.y < 10) {
+                        const nKey = `${n.x},${n.y}`;
+                        if (!ownedSet.has(nKey)) {
+                            spiralOrder.push({ x: n.x, y: n.y });
+                        }
+                    }
+                }
+            }
+        }
+        
+        return spiralOrder;
     }
     
     // Calculate final rankings

@@ -19,7 +19,9 @@ services:
 
   # Apache Server Service
   apache-server:
-      build: ./website
+      build:
+        context: .
+        dockerfile: website/Dockerfile
       container_name: apache-server
       ports:
         - "${APACHE_PORT}:80" # Exposed to host on port from env

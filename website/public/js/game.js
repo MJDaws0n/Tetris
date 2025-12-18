@@ -18,22 +18,42 @@ class TetrisApp {
         this.singlePlayerGame = null;
         this.multiplayerGame = null;
         this.ws = null;
+        // WebSocket URL (replaced by entrypoint.sh)
         this.wsUrl = 'wss://tetris-server.mjdawson.net:441';
         this.roomCode = null;
         this.playerId = null;
         this.isHost = false;
         this.players = [];
         this.captureGrid = [];
-        
+
         // UI Elements
         this.mainMenuModal = document.getElementById('mainMenuModal');
         this.singlePlayerBtn = document.getElementById('singlePlayerBtn');
         this.multiplayerBtn = document.getElementById('multiplayerBtn');
         this.leaderboardBtn = document.getElementById('leaderboardBtn');
-        
+
         // Sidebars
         this.singleSidebar = document.getElementById('sidebar');
         this.multiplayerSidebar = document.getElementById('multiplayerSidebar');
+
+        // Set version in UI if available
+        this._setVersion();
+    }
+
+    _setVersion() {
+        const version = (window.ENV && window.ENV.VERSION) ? window.ENV.VERSION : null;
+        if (version) {
+            // Update version in header and stylesheet param
+            const titleDiv = document.querySelector('.app-title');
+            if (titleDiv) {
+                titleDiv.textContent = `Tetris by Max v${version}`;
+            }
+            // Update stylesheet version param if present
+            const styleLink = document.querySelector('link[rel="stylesheet"]');
+            if (styleLink && styleLink.href.match(/v=\d+\.\d+\.\d+/)) {
+                styleLink.href = styleLink.href.replace(/v=\d+\.\d+\.\d+/, `v=${version}`);
+            }
+        }
     }
     
     init() {
