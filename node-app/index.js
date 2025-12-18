@@ -214,6 +214,7 @@ class Room {
     }
     
     // Capture tiles when a player clears lines - BFS flood fill from owned territory
+    // ALWAYS captures tiles, overriding ANY other player (alive or dead)
     captureTiles(playerId, linesCleared) {
         if (linesCleared <= 0) return [];
         
@@ -225,70 +226,84 @@ class Room {
         const captured = [];
         let remaining = linesCleared;
         
-        // Find all cells owned by this player
-        const ownedSet = new Set();
-        for (let y = 0; y < 10; y++) {
-            for (let x = 0; x < 10; x++) {
-                if (this.captureGrid[y][x] === playerId) {
-                    ownedSet.add(`${x},${y}`);
-                }
-            }
-        }
-        
-        // If player has no territory yet, place at their initial position
-        if (ownedSet.size === 0 && remaining > 0) {
-            const pos = this.getInitialPosition(playerId, this.players.size);
-            // Override whatever is there (including dead players)
-            this.captureGrid[pos.y][pos.x] = playerId;
-            captured.push(pos);
-            ownedSet.add(`${pos.x},${pos.y}`);
-            remaining--;
-        }
-        
-        // BFS to capture tiles adjacent to owned territory
-        // This properly handles overriding dead players and opponents
-        while (remaining > 0) {
-            // Find all cells adjacent to owned territory that we can capture
-            const frontier = [];
-            
-            for (const key of ownedSet) {
-                const [ox, oy] = key.split(',').map(Number);
-                const neighbors = [
-                    { x: ox - 1, y: oy },
-                    { x: ox + 1, y: oy },
-                    { x: ox, y: oy - 1 },
-                    { x: ox, y: oy + 1 },
-                ];
-                
-                for (const n of neighbors) {
-                    if (n.x >= 0 && n.x < 10 && n.y >= 0 && n.y < 10) {
-                        const nKey = `${n.x},${n.y}`;
-                        if (!ownedSet.has(nKey)) {
-                            // This cell can be captured (empty, opponent, or dead player)
-                            frontier.push({ x: n.x, y: n.y, key: nKey });
-                        }
+        // Helper to get current owned cells
+        const getOwnedCells = () => {
+            const owned = new Set();
+            for (let y = 0; y < 10; y++) {
+                for (let x = 0; x < 10; x++) {
+                    if (this.captureGrid[y][x] === playerId) {
+                        owned.add(`${x},${y}`);
                     }
                 }
             }
+            return owned;
+        };
+        
+        // If player has no territory yet, place at their initial position
+        let ownedSet = getOwnedCells();
+        if (ownedSet.size === 0 && remaining > 0) {
+            const pos = this.getInitialPosition(playerId, this.players.size);
+            // Override whatever is there (including other players)
+            this.captureGrid[pos.y][pos.x] = playerId;
+            captured.push(pos);
+            remaining--;
+            ownedSet = getOwnedCells();
+        }
+        
+        // Capture one tile at a time using BFS to find nearest capturable cell
+        while (remaining > 0) {
+            // BFS to find the nearest cell we can capture
+            const queue = [];
+            const visited = new Set();
             
-            if (frontier.length === 0) {
-                // No more cells to capture - player owns everything reachable
+            // Start BFS from all owned cells
+            for (const key of ownedSet) {
+                queue.push(key);
+                visited.add(key);
+            }
+            
+            let foundCell = null;
+            
+            while (queue.length > 0 && !foundCell) {
+                const current = queue.shift();
+                const [cx, cy] = current.split(',').map(Number);
+                
+                // Check all 4 neighbors
+                const neighbors = [
+                    { x: cx - 1, y: cy },
+                    { x: cx + 1, y: cy },
+                    { x: cx, y: cy - 1 },
+                    { x: cx, y: cy + 1 },
+                ];
+                
+                for (const n of neighbors) {
+                    if (n.x < 0 || n.x >= 10 || n.y < 0 || n.y >= 10) continue;
+                    
+                    const nKey = `${n.x},${n.y}`;
+                    if (visited.has(nKey)) continue;
+                    visited.add(nKey);
+                    
+                    // Check if this cell is NOT owned by us - if so, capture it!
+                    if (this.captureGrid[n.y][n.x] !== playerId) {
+                        foundCell = { x: n.x, y: n.y };
+                        break;
+                    }
+                    
+                    // Otherwise, it's our cell - add to queue to continue BFS
+                    queue.push(nKey);
+                }
+            }
+            
+            if (!foundCell) {
+                // Player owns the entire board - nothing left to capture
                 break;
             }
             
-            // Remove duplicates and capture in order
-            const seen = new Set();
-            for (const cell of frontier) {
-                if (remaining <= 0) break;
-                if (seen.has(cell.key)) continue;
-                seen.add(cell.key);
-                
-                // Capture the cell (override any existing owner including dead players)
-                this.captureGrid[cell.y][cell.x] = playerId;
-                captured.push({ x: cell.x, y: cell.y });
-                ownedSet.add(cell.key);
-                remaining--;
-            }
+            // Capture the found cell (override whoever owns it)
+            this.captureGrid[foundCell.y][foundCell.x] = playerId;
+            captured.push(foundCell);
+            ownedSet.add(`${foundCell.x},${foundCell.y}`);
+            remaining--;
         }
         
         // Update tile counts for all players and check for elimination
@@ -310,95 +325,6 @@ class Room {
         }
         
         return captured;
-    }
-    
-    // Get next cells in TRUE clockwise spiral pattern (kept for reference but not used)
-    // Spiral goes: right, down, left, up, right, down... expanding outward
-    getSpiralCells(ownedCells) {
-        const playerId = ownedCells.length > 0 ? 
-            this.captureGrid[ownedCells[0].y][ownedCells[0].x] : 0;
-        
-        // Build a set of owned positions for fast lookup
-        const ownedSet = new Set(ownedCells.map(c => `${c.x},${c.y}`));
-        
-        // Find the bounding box of owned territory
-        let minX = 10, maxX = -1, minY = 10, maxY = -1;
-        for (const cell of ownedCells) {
-            minX = Math.min(minX, cell.x);
-            maxX = Math.max(maxX, cell.x);
-            minY = Math.min(minY, cell.y);
-            maxY = Math.max(maxY, cell.y);
-        }
-        
-        // Generate spiral order starting from center of territory, going clockwise
-        const spiralOrder = [];
-        const centerX = Math.floor((minX + maxX) / 2);
-        const centerY = Math.floor((minY + maxY) / 2);
-        
-        // Directions: right, down, left, up (clockwise)
-        const dx = [1, 0, -1, 0];
-        const dy = [0, 1, 0, -1];
-        
-        let x = centerX, y = centerY;
-        let direction = 0; // Start going right
-        let stepsInDirection = 1;
-        let stepsTaken = 0;
-        let turnsAtCurrentLength = 0;
-        
-        // Generate spiral coordinates covering entire 10x10 grid
-        const visited = new Set();
-        for (let i = 0; i < 200; i++) { // More than enough for 10x10
-            if (x >= 0 && x < 10 && y >= 0 && y < 10) {
-                const key = `${x},${y}`;
-                if (!visited.has(key)) {
-                    visited.add(key);
-                    // Only add if not owned by this player
-                    if (!ownedSet.has(key)) {
-                        spiralOrder.push({ x, y });
-                    }
-                }
-            }
-            
-            // Move in current direction
-            x += dx[direction];
-            y += dy[direction];
-            stepsTaken++;
-            
-            // Check if we need to turn
-            if (stepsTaken >= stepsInDirection) {
-                stepsTaken = 0;
-                direction = (direction + 1) % 4; // Turn clockwise
-                turnsAtCurrentLength++;
-                
-                // After every 2 turns, increase the step length
-                if (turnsAtCurrentLength >= 2) {
-                    turnsAtCurrentLength = 0;
-                    stepsInDirection++;
-                }
-            }
-        }
-        
-        // Return cells that are adjacent to owned territory first (for connected growth)
-        const adjacentCells = [];
-        const nonAdjacentCells = [];
-        
-        for (const cell of spiralOrder) {
-            const isAdjacent = [
-                { x: cell.x - 1, y: cell.y },
-                { x: cell.x + 1, y: cell.y },
-                { x: cell.x, y: cell.y - 1 },
-                { x: cell.x, y: cell.y + 1 },
-            ].some(n => ownedSet.has(`${n.x},${n.y}`));
-            
-            if (isAdjacent) {
-                adjacentCells.push(cell);
-            } else {
-                nonAdjacentCells.push(cell);
-            }
-        }
-        
-        // Return adjacent cells first (maintains connected territory), then others
-        return [...adjacentCells, ...nonAdjacentCells];
     }
     
     // Calculate final rankings
