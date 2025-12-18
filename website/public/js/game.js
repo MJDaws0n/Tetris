@@ -503,6 +503,7 @@ class TetrisApp {
         this.players = message.players;
         this.captureGrid = message.captureGrid;
         const hardMode = message.hardMode;
+        const seed = message.seed;
         
         // Hide lobby, start game
         this._hideAllModals();
@@ -529,9 +530,9 @@ class TetrisApp {
         this._initLargeCaptureGrid();
         this._updateTerritoryLegend(this.players);
         
-        // Create multiplayer game
+        // Create multiplayer game with seed for synchronized pieces
         const myPlayer = this.players.find(p => p.id === this.playerId);
-        this.multiplayerGame = new MultiplayerGame(this, myPlayer.name, hardMode, myPlayer.color, myPlayer.id);
+        this.multiplayerGame = new MultiplayerGame(this, myPlayer.name, hardMode, myPlayer.color, myPlayer.id, seed);
         this.multiplayerGame.start();
         
         // Update grid immediately with starting positions
@@ -1580,11 +1581,31 @@ class SinglePlayerGame {
 // ============================================
 
 class MultiplayerGame extends SinglePlayerGame {
-    constructor(app, playerName, hardMode, playerColor, playerId) {
+    constructor(app, playerName, hardMode, playerColor, playerId, seed) {
         super(app, playerName, true, hardMode);
         this.myTilesOwned = 0;
         this.playerColor = playerColor;
         this.myPlayerId = playerId;
+        
+        // Use seeded random for synchronized piece generation
+        this.seededRandom = new SeededRandom(seed);
+        
+        // Re-generate initial pieces with seeded random (overwrite the random ones from parent)
+        this.nextPiece = this.randomPiece();
+    }
+    
+    // Override randomPiece to use seeded random
+    randomPiece() {
+        // Check if seededRandom is initialized (it won't be during parent constructor call)
+        if (!this.seededRandom) {
+            // During parent constructor - use regular random (will be overwritten)
+            const pieces = 'IJLOSTZ';
+            const type = pieces[Math.floor(Math.random() * pieces.length)];
+            return new Piece(type);
+        }
+        const pieces = 'IJLOSTZ';
+        const type = pieces[this.seededRandom.nextInt(pieces.length)];
+        return new Piece(type);
     }
     
     clearLines() {
@@ -1837,5 +1858,29 @@ class Piece {
     setPosition(x, y) {
         this.x = x;
         this.y = y;
+    }
+}
+
+// ============================================
+// SEEDED RANDOM NUMBER GENERATOR
+// Using Mulberry32 algorithm for deterministic sequences
+// ============================================
+
+class SeededRandom {
+    constructor(seed) {
+        this.seed = seed;
+    }
+    
+    // Mulberry32 PRNG - fast and good distribution
+    next() {
+        let t = this.seed += 0x6D2B79F5;
+        t = Math.imul(t ^ t >>> 15, t | 1);
+        t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+        return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    }
+    
+    // Get random integer in range [0, max)
+    nextInt(max) {
+        return Math.floor(this.next() * max);
     }
 }

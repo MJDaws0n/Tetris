@@ -45,6 +45,7 @@ class Room {
         this.winner = null;
         this.rankings = [];
         this.createdAt = Date.now();
+        this.gameSeed = null; // Seed for synchronized piece generation
         
         // Add host as first player
         this.addPlayer(host, hostName);
@@ -212,7 +213,7 @@ class Room {
         return false;
     }
     
-    // Capture tiles when a player clears lines - Clockwise spiral pattern with aggressive overriding
+    // Capture tiles when a player clears lines - BFS flood fill from owned territory
     captureTiles(playerId, linesCleared) {
         if (linesCleared <= 0) return [];
         
@@ -225,42 +226,67 @@ class Room {
         let remaining = linesCleared;
         
         // Find all cells owned by this player
-        const ownedCells = [];
+        const ownedSet = new Set();
         for (let y = 0; y < 10; y++) {
             for (let x = 0; x < 10; x++) {
                 if (this.captureGrid[y][x] === playerId) {
-                    ownedCells.push({ x, y });
+                    ownedSet.add(`${x},${y}`);
                 }
             }
         }
         
         // If player has no territory yet, place at their initial position
-        if (ownedCells.length === 0 && remaining > 0) {
+        if (ownedSet.size === 0 && remaining > 0) {
             const pos = this.getInitialPosition(playerId, this.players.size);
-            // Override whatever is there
+            // Override whatever is there (including dead players)
             this.captureGrid[pos.y][pos.x] = playerId;
             captured.push(pos);
+            ownedSet.add(`${pos.x},${pos.y}`);
             remaining--;
-            ownedCells.push(pos);
         }
         
-        // Capture tiles in clockwise spiral pattern from owned territory
-        while (remaining > 0 && ownedCells.length > 0) {
-            const spiralCells = this.getSpiralCells(ownedCells);
+        // BFS to capture tiles adjacent to owned territory
+        // This properly handles overriding dead players and opponents
+        while (remaining > 0) {
+            // Find all cells adjacent to owned territory that we can capture
+            const frontier = [];
             
-            if (spiralCells.length === 0) {
-                // No more cells to capture - board is full or unreachable
+            for (const key of ownedSet) {
+                const [ox, oy] = key.split(',').map(Number);
+                const neighbors = [
+                    { x: ox - 1, y: oy },
+                    { x: ox + 1, y: oy },
+                    { x: ox, y: oy - 1 },
+                    { x: ox, y: oy + 1 },
+                ];
+                
+                for (const n of neighbors) {
+                    if (n.x >= 0 && n.x < 10 && n.y >= 0 && n.y < 10) {
+                        const nKey = `${n.x},${n.y}`;
+                        if (!ownedSet.has(nKey)) {
+                            // This cell can be captured (empty, opponent, or dead player)
+                            frontier.push({ x: n.x, y: n.y, key: nKey });
+                        }
+                    }
+                }
+            }
+            
+            if (frontier.length === 0) {
+                // No more cells to capture - player owns everything reachable
                 break;
             }
             
-            // Take cells in clockwise order
-            for (const cell of spiralCells) {
+            // Remove duplicates and capture in order
+            const seen = new Set();
+            for (const cell of frontier) {
                 if (remaining <= 0) break;
+                if (seen.has(cell.key)) continue;
+                seen.add(cell.key);
                 
-                // Override any tile (empty or opponent)
+                // Capture the cell (override any existing owner including dead players)
                 this.captureGrid[cell.y][cell.x] = playerId;
-                captured.push(cell);
-                ownedCells.push(cell);
+                captured.push({ x: cell.x, y: cell.y });
+                ownedSet.add(cell.key);
                 remaining--;
             }
         }
@@ -270,7 +296,7 @@ class Room {
         for (const [ws, p] of this.players) {
             p.tilesOwned = counts[p.id] || 0;
             
-            // Eliminate players with zero tiles
+            // Eliminate players with zero tiles (they lost all territory)
             if (p.tilesOwned === 0 && !p.eliminated && p.id !== playerId) {
                 p.eliminated = true;
             }
@@ -286,7 +312,7 @@ class Room {
         return captured;
     }
     
-    // Get next cells in TRUE clockwise spiral pattern
+    // Get next cells in TRUE clockwise spiral pattern (kept for reference but not used)
     // Spiral goes: right, down, left, up, right, down... expanding outward
     getSpiralCells(ownedCells) {
         const playerId = ownedCells.length > 0 ? 
@@ -884,14 +910,18 @@ function handleStartMultiplayer(ws, data) {
         playerIdx++;
     }
     
+    // Generate seed for synchronized piece generation
+    room.gameSeed = crypto.randomInt(0, 2147483647);
+    
     broadcastToRoom(code, {
         type: 'game_started',
         hardMode: room.hardMode,
         players: room.getPlayerList(),
         captureGrid: room.captureGrid,
+        seed: room.gameSeed,
     });
     
-    console.log(`Game started in room ${code} (Hard: ${room.hardMode})`);
+    console.log(`Game started in room ${code} (Hard: ${room.hardMode}, Seed: ${room.gameSeed})`);
 }
 
 async function handleLineClear(ws, data) {
