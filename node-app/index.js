@@ -115,16 +115,16 @@ class Room {
     
     // Get initial position for player (equally spaced around the grid)
     getInitialPosition(playerId, totalPlayers) {
-        // Place players equally spaced around the perimeter or in a grid pattern
+        // Place players equally spaced around the perimeter - much further apart
         const positions = [
-            { x: 2, y: 2 },   // Top-left
-            { x: 7, y: 2 },   // Top-right
-            { x: 7, y: 7 },   // Bottom-right
-            { x: 2, y: 7 },   // Bottom-left
-            { x: 4, y: 1 },   // Top-center
-            { x: 8, y: 4 },   // Right-center
-            { x: 4, y: 8 },   // Bottom-center
-            { x: 1, y: 4 },   // Left-center
+            { x: 1, y: 1 },   // Top-left corner
+            { x: 8, y: 1 },   // Top-right corner
+            { x: 8, y: 8 },   // Bottom-right corner
+            { x: 1, y: 8 },   // Bottom-left corner
+            { x: 4, y: 0 },   // Top-center edge
+            { x: 9, y: 4 },   // Right-center edge
+            { x: 4, y: 9 },   // Bottom-center edge
+            { x: 0, y: 4 },   // Left-center edge
         ];
         
         return positions[(playerId - 1) % positions.length];
@@ -274,6 +274,13 @@ class Room {
             if (p.tilesOwned === 0 && !p.eliminated && p.id !== playerId) {
                 p.eliminated = true;
             }
+        }
+        
+        // Check if only one player remains alive
+        const alivePlayers = [...this.players.values()].filter(p => !p.eliminated);
+        if (alivePlayers.length === 1) {
+            // Last player standing wins
+            this.winner = alivePlayers[0];
         }
         
         return captured;
@@ -819,6 +826,15 @@ function handleStartMultiplayer(ws, data) {
         player.lastClearSize = 0;
     }
     
+    // Place initial territory block for each player
+    let playerIdx = 1;
+    for (const [playerWs, player] of room.players) {
+        const pos = room.getInitialPosition(playerIdx, room.players.size);
+        room.captureGrid[pos.y][pos.x] = player.id;
+        player.tilesOwned = 1;
+        playerIdx++;
+    }
+    
     broadcastToRoom(code, {
         type: 'game_started',
         hardMode: room.hardMode,
@@ -848,7 +864,7 @@ async function handleLineClear(ws, data) {
     // Capture tiles on the grid
     const captured = room.captureTiles(player.id, linesCleared);
     
-    // Check for win
+    // Check for win (100% control or last player standing)
     const winner = room.checkWin();
     
     if (winner) {
@@ -873,16 +889,41 @@ async function handleLineClear(ws, data) {
         
         console.log(`Game over in room ${code}. Winner: ${winner.name}`);
     } else {
-        // Broadcast grid update to all players
-        broadcastToRoom(code, {
-            type: 'grid_update',
-            playerId: player.id,
-            playerName: player.name,
-            linesCleared: linesCleared,
-            captured: captured,
-            captureGrid: room.captureGrid,
-            players: room.getPlayerList(),
-        });
+        // Check if only one player remains alive (auto-win)
+        const alivePlayers = [...room.players.values()].filter(p => !p.eliminated);
+        if (alivePlayers.length === 1 && room.players.size > 1) {
+            room.state = 'finished';
+            room.winner = alivePlayers[0];
+            const rankings = room.calculateRankings();
+            
+            // Add scores to leaderboard
+            for (const [playerWs, p] of room.players) {
+                if (p.score > 0) {
+                    await upsertScore(p.name, p.score, room.hardMode);
+                }
+            }
+            await broadcastLeaderboard();
+            
+            broadcastToRoom(code, {
+                type: 'game_over',
+                winner: { name: room.winner.name, color: room.winner.color },
+                rankings: rankings,
+                captureGrid: room.captureGrid,
+            });
+            
+            console.log(`Game over in room ${code}. Last player standing: ${room.winner.name}`);
+        } else {
+            // Broadcast grid update to all players
+            broadcastToRoom(code, {
+                type: 'grid_update',
+                playerId: player.id,
+                playerName: player.name,
+                linesCleared: linesCleared,
+                captured: captured,
+                captureGrid: room.captureGrid,
+                players: room.getPlayerList(),
+            });
+        }
     }
 }
 

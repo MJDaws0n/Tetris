@@ -1581,8 +1581,32 @@ class MultiplayerGame extends SinglePlayerGame {
         
         // Check if player lost all tiles
         const myPlayer = players.find(p => p.id === this.app.playerId);
-        if (myPlayer && myPlayer.tilesOwned === 0 && !this.gameOver) {
-            this.showScorePopup('All tiles lost!\nYou\'re eliminated!');
+        if (myPlayer && myPlayer.eliminated && !this.gameOver) {
+            // Player was eliminated - stop their game
+            this.gameOver = true;
+            this.showScorePopup('ELIMINATED!\nAll tiles lost!');
+            
+            // Optionally draw a game over overlay
+            setTimeout(() => {
+                this.context.save();
+                this.context.fillStyle = 'rgba(0, 0, 0, 0.75)';
+                const fullWidth = this.boardWidth * this.cellSize;
+                const fullHeight = this.boardHeight * this.cellSize + this.topOffset;
+                this.context.fillRect(0, 0, fullWidth, fullHeight);
+                
+                this.context.fillStyle = '#ff453a';
+                this.context.font = 'bold 36px -apple-system, sans-serif';
+                const text = 'ELIMINATED';
+                const centerX = fullWidth / 2;
+                const centerY = fullHeight / 2;
+                this.context.fillText(text, centerX - (this.context.measureText(text).width / 2), centerY - 10);
+                
+                this.context.font = '14px -apple-system, sans-serif';
+                this.context.fillStyle = '#98989d';
+                const hint = 'All tiles captured by opponents';
+                this.context.fillText(hint, centerX - (this.context.measureText(hint).width / 2), centerY + 20);
+                this.context.restore();
+            }, 100);
         }
         
         this.updatePlayers(players);
