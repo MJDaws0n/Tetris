@@ -264,7 +264,7 @@ canvas {
 .next-piece-cell {
     width: 16px;
     height: 16px;
-    border-radius: 4px;
+    border-radius: 0;
     background: var(--bg-tertiary);
     transition: all var(--transition-fast);
 }

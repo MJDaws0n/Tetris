@@ -1640,6 +1640,7 @@ class MultiplayerGame extends SinglePlayerGame {
         document.getElementById('mpStatLevel').textContent = this.level;
         document.getElementById('mpStatLines').textContent = this.linesCleared;
         document.getElementById('mpStatTiles').textContent = this.myTilesOwned;
+        document.getElementById('mpStatTime').textContent = this._formatTime(this.elapsedTime);
         
         this.renderPiecePreview('mpNextPiecePreview', this.nextPiece);
         this.renderPiecePreview('mpHoldPiecePreview', this.holdPiece);
