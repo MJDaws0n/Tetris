@@ -31,7 +31,7 @@ services:
   # MySQL Database Service (Internal Only)
   mysql-testing:
       image: mysql:8.0
-      container_name: mysql-db
+      container_name: mysql-db-2
       # No ports section means it's not exposed to the host, only to the network
       environment:
         - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
