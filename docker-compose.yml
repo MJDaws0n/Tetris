@@ -13,7 +13,7 @@ services:
         - DB_PASSWORD=${MYSQL_ROOT_PASSWORD}
         - DB_NAME=${MYSQL_DATABASE}
       depends_on:
-        - mysql
+        - mysql-testing
       networks:
         - app-network
 
@@ -29,7 +29,7 @@ services:
         - app-network
 
   # MySQL Database Service (Internal Only)
-  mysql:
+  mysql-testing:
       image: mysql:8.0
       container_name: mysql-db
       # No ports section means it's not exposed to the host, only to the network
